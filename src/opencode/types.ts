@@ -5,13 +5,13 @@ export type SessionRow = {
   title: string
   latestMessage: string
   latestUserMessage: string
-  contextTokens?: number
-  contextPercent?: number
+  contextTokens?: number | undefined
+  contextPercent?: number | undefined
   directory: string
   projectID: string
   projectTitle: string
   worktreeName: string
-  workspaceID?: string
+  workspaceID?: string | undefined
   updated: number
   status: SessionStatus
 }

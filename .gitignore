@@ -1,6 +1,8 @@
 node_modules/
 dist/
 bin/
+coverage/
+.direnv/
 .tmp/
 *.bun-build
 *.log

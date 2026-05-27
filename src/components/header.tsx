@@ -3,7 +3,7 @@ import { countLane, truncate } from "../lib/utils.ts"
 import type { DashboardSnapshot } from "../opencode.ts"
 import { theme } from "../theme.ts"
 
-export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot; width: number }) {
+export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot | undefined; width: number }) {
   const rows = snapshot?.rows ?? []
   const now = Date.now()
   const serverUrl = snapshot?.serverUrl ?? "http://localhost:4096"

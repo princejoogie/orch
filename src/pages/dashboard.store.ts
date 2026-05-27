@@ -4,11 +4,11 @@ import { useStore } from "zustand"
 import type { Selection } from "../lib/utils.ts"
 
 export type DashboardStore = {
-  activeTabId?: string
+  activeTabId?: string | undefined
   selection: Selection
   searchValue: string
   searchFocused: boolean
-  setActiveTabId: (activeTabId?: string) => void
+  setActiveTabId: (activeTabId?: string | undefined) => void
   setSelection: (selection: Selection | ((current: Selection) => Selection)) => void
   setSearchValue: (searchValue: string) => void
   setSearchFocused: (searchFocused: boolean) => void

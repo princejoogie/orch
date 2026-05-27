@@ -16,6 +16,7 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
   { name: "kpenter", action: "submit" },
   { name: "linefeed", action: "submit" },
+  { name: "s", ctrl: true, action: "submit" },
   { name: "return", shift: true, action: "newline" },
   { name: "kpenter", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
@@ -72,12 +73,32 @@ export function DialogDescription({
   return <text content={children} style={{ fg: danger ? DIALOG_DANGER : DIALOG_MUTED, marginTop }} />
 }
 
-export function DialogOption({ children, selected }: { children: string; selected: boolean }) {
+export function DialogOption({
+  children,
+  selected,
+  onSelect,
+}: {
+  children: string
+  selected: boolean
+  onSelect?: () => void
+}) {
   return (
-    <text
-      content={`${selected ? "> " : "  "}${children}`}
-      style={{ fg: selected ? DIALOG_TITLE : DIALOG_MUTED, attributes: selected ? TextAttributes.BOLD : undefined }}
-    />
+    <box
+      style={{ height: 1 }}
+      onMouseDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onSelect?.()
+      }}
+    >
+      <text
+        content={`${selected ? "> " : "  "}${children}`}
+        style={{
+          fg: selected ? DIALOG_TITLE : DIALOG_MUTED,
+          ...(selected ? { attributes: TextAttributes.BOLD } : {}),
+        }}
+      />
+    </box>
   )
 }
 
@@ -85,7 +106,7 @@ export function DialogHint({ children }: { children: string }) {
   return <text content={children} style={{ fg: DIALOG_HINT }} />
 }
 
-export function DialogError({ error, width }: { error?: string; width: number }) {
+export function DialogError({ error, width }: { error?: string | undefined; width: number }) {
   return error ? <text content={truncate(error, width - 4)} style={{ fg: DIALOG_DANGER }} /> : null
 }
 

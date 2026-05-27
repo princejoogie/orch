@@ -34,14 +34,14 @@ export type PromptDialogState = {
   row: SessionRow
   value: string
   sending: boolean
-  latestUserMessage?: string
-  loadingPreview?: boolean
-  error?: string
+  latestUserMessage?: string | undefined
+  loadingPreview?: boolean | undefined
+  error?: string | undefined
 }
 
 export type WorktreeOption = {
   directory: string
-  workspaceID?: string
+  workspaceID?: string | undefined
   name: string
 }
 
@@ -51,13 +51,13 @@ export type AddSessionDialogState = {
   worktreeIndex: number
   value: string
   sending: boolean
-  error?: string
+  error?: string | undefined
 }
 
 export type DeleteSessionDialogState = {
   row: SessionRow
-  deleting?: boolean
-  error?: string
+  deleting?: boolean | undefined
+  error?: string | undefined
 }
 
 export type WrappedLine = {
@@ -70,6 +70,7 @@ export type SearchInputProps = {
   focused: boolean
   width: number
   onInput: (value: string) => void
+  onFocus: () => void
 }
 
 export type ProjectTab = {
@@ -235,7 +236,11 @@ export function worktreeOptions(tab?: ProjectTab): WorktreeOption[] {
   for (const row of tab.rows) {
     const id = `${row.directory}\t${row.workspaceID ?? ""}`
     if (options.has(id)) continue
-    options.set(id, { directory: row.directory, workspaceID: row.workspaceID, name: row.worktreeName })
+    options.set(id, {
+      directory: row.directory,
+      ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
+      name: row.worktreeName,
+    })
   }
   return [...options.values()].sort((left, right) => left.name.localeCompare(right.name))
 }
@@ -243,7 +248,7 @@ export function worktreeOptions(tab?: ProjectTab): WorktreeOption[] {
 function assignWorktreeColors(rows: SessionRow[]): Record<string, string> {
   const worktrees = [...new Set(rows.map((row) => row.worktreeName))].sort((left, right) => left.localeCompare(right))
   return Object.fromEntries(
-    worktrees.map((worktree, index) => [worktree, WORKTREE_COLORS[index % WORKTREE_COLORS.length]]),
+    worktrees.map((worktree, index) => [worktree, WORKTREE_COLORS[index % WORKTREE_COLORS.length] ?? theme.textMuted]),
   )
 }
 
@@ -266,6 +271,21 @@ export function moveSelection(
     (entry) => entry.section === selection.section && entry.index === selection.index,
   )
   const next = entries[nextIndex(currentIndex === -1 ? 0 : currentIndex, delta, entries.length)]!
+  return { section: next.section, index: next.index }
+}
+
+export function moveSelectionClamped(
+  selection: Selection,
+  delta: number,
+  rowsBySection: Record<LaneStatus, SessionRow[]>,
+): Selection {
+  const entries = selectableEntries(rowsBySection)
+  if (entries.length === 0) return { section: selection.section, index: 0 }
+
+  const currentIndex = entries.findIndex(
+    (entry) => entry.section === selection.section && entry.index === selection.index,
+  )
+  const next = entries[clamp((currentIndex === -1 ? 0 : currentIndex) + delta, 0, entries.length - 1)]!
   return { section: next.section, index: next.index }
 }
 

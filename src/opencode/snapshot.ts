@@ -27,16 +27,19 @@ type StatusMap = Record<string, OpencodeSessionStatus>
 type SessionDetails = Pick<SessionRow, "latestMessage" | "latestUserMessage" | "contextTokens" | "contextPercent">
 
 async function loadStatuses(sessions: GlobalSession[]): Promise<Map<string, StatusMap>> {
-  const routes = new Map<string, { directory: string; workspaceID?: string }>()
+  const routes = new Map<string, { directory: string; workspaceID?: string | undefined }>()
   for (const session of sessions) {
-    routes.set(routeKey(session), { directory: session.directory, workspaceID: session.workspaceID })
+    routes.set(routeKey(session), {
+      directory: session.directory,
+      ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
+    })
   }
 
   const entries = await Promise.all(
     [...routes.entries()].map(async ([key, route]) => {
       try {
         const result = await opencodeClient.session.status(
-          { directory: route.directory, workspace: route.workspaceID },
+          { directory: route.directory, ...(route.workspaceID !== undefined ? { workspace: route.workspaceID } : {}) },
           { throwOnError: true },
         )
         return [key, result.data] as const
@@ -56,21 +59,21 @@ async function loadSessionDetails(sessions: GlobalSession[]): Promise<Map<string
         const messages = await loadLatestMessages({
           sessionID: session.id,
           directory: session.directory,
-          workspaceID: session.workspaceID,
+          ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
         })
         const context = await loadContextUsage({
           sessionID: session.id,
           directory: session.directory,
-          workspaceID: session.workspaceID,
-          historyAssistantMessage: messages.assistantInfo,
+          ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
+          ...(messages.assistantInfo !== undefined ? { historyAssistantMessage: messages.assistantInfo } : {}),
         }).catch((): { tokens?: number; percent?: number } => ({}))
         return [
           session.id,
           {
             latestMessage: messages.assistantMessage,
             latestUserMessage: messages.userMessage,
-            contextTokens: context.tokens,
-            contextPercent: context.percent,
+            ...(context.tokens !== undefined ? { contextTokens: context.tokens } : {}),
+            ...(context.percent !== undefined ? { contextPercent: context.percent } : {}),
           },
         ] as const
       } catch {
@@ -82,7 +85,7 @@ async function loadSessionDetails(sessions: GlobalSession[]): Promise<Map<string
   return new Map(entries)
 }
 
-function routeKey(input: { directory: string; workspaceID?: string }): string {
+function routeKey(input: { directory: string; workspaceID?: string | undefined }): string {
   return `${input.directory}\t${input.workspaceID ?? ""}`
 }
 
@@ -93,13 +96,13 @@ function toRow(session: GlobalSession, status?: OpencodeSessionStatus, details?:
     title: session.title,
     latestMessage: details?.latestMessage ?? "",
     latestUserMessage: details?.latestUserMessage ?? "",
-    contextTokens: details?.contextTokens,
-    contextPercent: details?.contextPercent,
+    ...(details?.contextTokens !== undefined ? { contextTokens: details.contextTokens } : {}),
+    ...(details?.contextPercent !== undefined ? { contextPercent: details.contextPercent } : {}),
     directory: session.directory,
     projectID: session.projectID,
     projectTitle: session.project?.name ?? formatDirectory(projectWorktree ?? session.directory),
     worktreeName: formatDirectory(session.directory),
-    workspaceID: session.workspaceID,
+    ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
     updated: session.time.updated,
     status: inferStatus(session, status),
   }

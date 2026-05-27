@@ -9,16 +9,23 @@
     "orch": "./src/index.ts"
   },
   "scripts": {
+    "check": "bun run format:check && bun run typecheck && bun run lint && bun run test && bun run package:smoke",
     "dev": "bun run src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun run scripts/build.ts",
     "build:debug": "bun run scripts/build.ts --sourcemap",
+    "build:standalone": "bun run scripts/build-standalone.ts",
     "bench:opencode": "bun run scripts/bench-opencode.ts",
+    "changeset": "npm exec --package @changesets/cli@2.31.0 -- changeset",
+    "changeset:status": "npm exec --package @changesets/cli@2.31.0 -- changeset status",
+    "changeset:version": "npm exec --package @changesets/cli@2.31.0 -- changeset version",
+    "test": "bun test test",
     "typecheck": "tsc --noEmit",
-    "lint": "oxlint .",
-    "lint:fix": "oxlint --fix .",
-    "format": "oxfmt --write .",
-    "format:check": "oxfmt --check ."
+    "lint": "oxlint --tsconfig tsconfig.json src/ scripts/ test/",
+    "lint:fix": "oxlint --fix --tsconfig tsconfig.json src/ scripts/ test/",
+    "format": "oxfmt --write src/ scripts/ test/",
+    "format:check": "oxfmt --check src/ scripts/ test/",
+    "package:smoke": "bun run scripts/package-smoke.ts"
   },
   "dependencies": {
     "@opencode-ai/sdk": "1.15.11",

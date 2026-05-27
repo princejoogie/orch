@@ -19,20 +19,19 @@ export const opencodeClient = createOpencodeClient({ baseUrl: opencodeServerUrl(
 export type LatestMessages = {
   userMessage: string
   assistantMessage: string
-  assistantInfo?: AssistantMessage
+  assistantInfo?: AssistantMessage | undefined
 }
 
 export async function sendPrompt(input: {
   sessionID: string
   text: string
-  directory?: string
-  workspaceID?: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
 }): Promise<void> {
   await opencodeClient.session.promptAsync(
     {
       sessionID: input.sessionID,
-      directory: input.directory,
-      workspace: input.workspaceID,
+      ...routeOptions(input),
       parts: [{ type: "text", text: input.text }],
     },
     { throwOnError: true },
@@ -42,18 +41,18 @@ export async function sendPrompt(input: {
 export async function createSessionWithPrompt(input: {
   text: string
   directory: string
-  workspaceID?: string
+  workspaceID?: string | undefined
 }): Promise<string> {
   const session = await opencodeClient.session.create(
-    { directory: input.directory, workspace: input.workspaceID },
+    { directory: input.directory, ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}) },
     { throwOnError: true },
   )
 
   await sendPrompt({
     sessionID: session.data.id,
     directory: input.directory,
-    workspaceID: input.workspaceID,
     text: input.text,
+    ...(input.workspaceID !== undefined ? { workspaceID: input.workspaceID } : {}),
   })
 
   return session.data.id
@@ -61,14 +60,13 @@ export async function createSessionWithPrompt(input: {
 
 export async function deleteSession(input: {
   sessionID: string
-  directory?: string
-  workspaceID?: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
 }): Promise<void> {
   await opencodeClient.session.delete(
     {
       sessionID: input.sessionID,
-      directory: input.directory,
-      workspace: input.workspaceID,
+      ...routeOptions(input),
     },
     { throwOnError: true },
   )
@@ -76,15 +74,14 @@ export async function deleteSession(input: {
 
 export async function loadLatestMessages(input: {
   sessionID: string
-  directory?: string
-  workspaceID?: string
-  limit?: number
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  limit?: number | undefined
 }): Promise<LatestMessages> {
   const result = await opencodeClient.session.messages(
     {
       sessionID: input.sessionID,
-      directory: input.directory,
-      workspace: input.workspaceID,
+      ...routeOptions(input),
       limit: input.limit ?? 20,
     },
     { throwOnError: true },
@@ -95,23 +92,19 @@ export async function loadLatestMessages(input: {
 
 export async function loadContextUsage(input: {
   sessionID: string
-  directory?: string
-  workspaceID?: string
-  historyAssistantMessage?: AssistantMessage
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  historyAssistantMessage?: AssistantMessage | undefined
 }): Promise<{ tokens?: number; percent?: number }> {
   const [context, providers] = await Promise.all([
     opencodeClient.v2.session.context(
       {
         sessionID: input.sessionID,
-        directory: input.directory,
-        workspace: input.workspaceID,
+        ...routeOptions(input),
       },
       { throwOnError: true },
     ),
-    opencodeClient.config.providers(
-      { directory: input.directory, workspace: input.workspaceID },
-      { throwOnError: true },
-    ),
+    opencodeClient.config.providers(routeOptions(input), { throwOnError: true }),
   ])
 
   const latestAssistant = latestAssistantMessage(context.data)
@@ -128,10 +121,8 @@ export async function loadContextUsage(input: {
       ? providers.data.providers.find((provider: Provider) => provider.id === providerID)?.models[modelID]
       : undefined
   const limit = model?.limit.context
-  return {
-    tokens,
-    percent: tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined,
-  }
+  const percent = tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined
+  return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
 }
 
 function extractLatestMessages(messages: SessionMessagesResponse): LatestMessages {
@@ -151,7 +142,14 @@ function extractLatestMessages(messages: SessionMessagesResponse): LatestMessage
     if (userMessage && assistantMessage) break
   }
 
-  return { userMessage, assistantMessage, assistantInfo }
+  return { userMessage, assistantMessage, ...(assistantInfo !== undefined ? { assistantInfo } : {}) }
+}
+
+function routeOptions(input: { directory?: string | undefined; workspaceID?: string | undefined }) {
+  return {
+    ...(input.directory !== undefined ? { directory: input.directory } : {}),
+    ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
+  }
 }
 
 function latestAssistantMessage(

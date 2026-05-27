@@ -64,7 +64,7 @@ export function PromptDialog({
         onSubmit={onSubmit}
       />
       <DialogError error={state.error} width={dialogWidth} />
-      <DialogHint>Enter send · Shift-Enter newline · Esc cancel</DialogHint>
+      <DialogHint>Enter/Ctrl-S send · Shift-Enter newline · Esc cancel</DialogHint>
     </Dialog>
   )
 }
@@ -75,12 +75,14 @@ export function AddSessionDialog({
   height,
   onInput,
   onSubmit,
+  onWorktreeSelect,
 }: {
   state: AddSessionDialogState
   width: number
   height: number
   onInput: (value: string) => void
   onSubmit: (value: string) => void
+  onWorktreeSelect: (index: number) => void
 }) {
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
@@ -109,6 +111,7 @@ export function AddSessionDialog({
             <DialogOption
               key={`${worktree.directory}:${worktree.workspaceID ?? ""}`}
               selected={index === state.worktreeIndex}
+              onSelect={() => onWorktreeSelect(index)}
             >
               {truncate(worktree.name, dialogWidth - 6)}
             </DialogOption>
@@ -124,7 +127,7 @@ export function AddSessionDialog({
         onSubmit={onSubmit}
       />
       <DialogError error={state.error} width={dialogWidth} />
-      <DialogHint>Tab select worktree · Enter create · Shift-Enter newline · Esc cancel</DialogHint>
+      <DialogHint>Tab/click select worktree · Enter create · Ctrl-S send · Shift-Enter newline · Esc cancel</DialogHint>
     </Dialog>
   )
 }
@@ -164,8 +167,12 @@ const SHORTCUTS = [
   ["Create new session", "a"],
   ["Next project", "Tab"],
   ["Previous project", "Shift-Tab"],
+  ["Select project", "1-9"],
   ["Move selection down", "j / Down"],
   ["Move selection up", "k / Up"],
+  ["Half page down/up", "Ctrl-D / Ctrl-U"],
+  ["Move down/up", "Ctrl-N / Ctrl-P"],
+  ["Jump top/bottom", "Home / End"],
   ["Jump to top", "gg"],
   ["Jump to bottom", "G"],
   ["Refresh sessions", "r"],

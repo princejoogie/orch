@@ -12,9 +12,13 @@
     "verbatimModuleSyntax": true,
     "noEmit": true,
     "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "noUnusedLocals": true,
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true,
     "types": ["bun"]
   },
-  "include": ["scripts/**/*.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["scripts/**/*.ts", "src/**/*.ts", "src/**/*.tsx", "test/**/*.ts", "test/**/*.tsx"]
 }

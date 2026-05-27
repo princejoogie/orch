@@ -58,6 +58,9 @@ export function SectionView({
   selection,
   active,
   width,
+  hoveredRowId,
+  onRowHover,
+  onRowSelect,
 }: {
   section: Section
   rows: SessionRow[]
@@ -65,6 +68,9 @@ export function SectionView({
   selection: Selection
   active: boolean
   width: number
+  hoveredRowId?: string | undefined
+  onRowHover: (rowId: string | undefined) => void
+  onRowSelect: (selection: Selection) => void
 }) {
   return (
     <box style={{ flexDirection: "column", marginBottom: 1, width }}>
@@ -85,8 +91,11 @@ export function SectionView({
           row={row}
           section={section}
           selected={active && selection.index === index}
+          hovered={hoveredRowId === row.id}
           worktreeColors={worktreeColors}
           width={width}
+          onHover={(hovered) => onRowHover(hovered ? row.id : undefined)}
+          onSelect={() => onRowSelect({ section: section.status, index })}
         />
       ))}
     </box>
@@ -97,14 +106,20 @@ function SessionItem({
   row,
   section,
   selected,
+  hovered,
   worktreeColors,
   width,
+  onHover,
+  onSelect,
 }: {
   row: SessionRow
   section: Section
   selected: boolean
+  hovered: boolean
   worktreeColors: Record<string, string>
   width: number
+  onHover: (hovered: boolean) => void
+  onSelect: () => void
 }) {
   const now = useNow(80)
   const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
@@ -119,13 +134,20 @@ function SessionItem({
         height: 1,
         overflow: "hidden",
         width,
-        backgroundColor: selected ? theme.backgroundElement : undefined,
+        ...(selected || hovered ? { backgroundColor: selected ? theme.backgroundElement : theme.backgroundPanel } : {}),
       }}
+      onMouseDown={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        onSelect()
+      }}
+      onMouseOver={() => onHover(true)}
+      onMouseOut={() => onHover(false)}
     >
       <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
       <text
         content={truncate(row.title, titleWidth).padEnd(titleWidth)}
-        style={{ fg: theme.text, attributes: selected ? TextAttributes.BOLD : undefined }}
+        style={{ fg: theme.text, ...(selected ? { attributes: TextAttributes.BOLD } : {}) }}
       />
       <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
       <text

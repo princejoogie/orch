@@ -3,7 +3,7 @@ import { useRef } from "react"
 import type { SearchInputProps } from "../../lib/utils.ts"
 import { theme } from "../../theme.ts"
 
-export function SearchInput({ value, focused, width, onInput }: SearchInputProps) {
+export function SearchInput({ value, focused, width, onInput, onFocus }: SearchInputProps) {
   const inputRef = useRef<InputRenderable>(null)
   const inputWidth = Math.min(44, Math.max(16, width))
 
@@ -18,6 +18,7 @@ export function SearchInput({ value, focused, width, onInput }: SearchInputProps
           paddingRight: 1,
           width: inputWidth,
         }}
+        onMouseDown={onFocus}
       >
         <input
           ref={inputRef}

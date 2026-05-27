@@ -1,23 +1,26 @@
 import { type ScrollBoxRenderable } from "@opentui/core"
-import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Header, HeaderTitle } from "../components/header.tsx"
 import { AddSessionDialog, DeleteSessionDialog, PromptDialog, ShortcutsDialog } from "../components/session-dialogs.tsx"
 import { SectionView, TableHeader } from "../components/session-table.tsx"
 import { SearchInput } from "../components/ui/input.tsx"
 import { ProjectTabs } from "../components/ui/tabs.tsx"
 import { useNow } from "../hooks/use-now.ts"
+import { useScrollFollowSelected } from "../hooks/use-scroll-follow-selected.ts"
+import { dashboardKeymap } from "../keymap/dashboard.ts"
+import { useOpenTuiSubscribe } from "../keymap/opentui-adapter.ts"
+import { useKeymap } from "../keymap/react.ts"
 import { theme } from "../theme.ts"
 import {
   clamp,
   groupRowsByProject,
   moveSelection,
+  moveSelectionClamped,
   nextIndex,
-  rowElementId,
   rowInLane,
   SECTIONS,
-  sectionElementId,
   selectedRow,
   selectionEdge,
   worktreeOptions,
@@ -43,8 +46,6 @@ export function DashboardPage() {
   const dimensions = useTerminalDimensions()
   const now = useNow(80)
   const listRef = useRef<ScrollBoxRenderable>(null)
-  const pendingGoToTop = useRef(false)
-  const selectionScrollDirection = useRef<-1 | 0 | 1>(0)
   const [addSessionDialog, setAddSessionDialog] = useState<AddSessionDialogState>()
   const [promptDialog, setPromptDialog] = useState<PromptDialogState>()
   const [deleteDialog, setDeleteDialog] = useState<DeleteSessionDialogState>()
@@ -98,10 +99,80 @@ export function DashboardPage() {
   )
   const activeSection = selection.section
   const currentRow = selectedRow(selection, rowsBySection)
-  const selectedElementId = currentRow ? rowElementId(currentRow) : sectionElementId(selection.section)
   const workingCount = rowsBySection.working.length
   const needsInputCount = rowsBySection["needs-input"].length
   const completedCount = rowsBySection.completed.length
+  const tableHeaderHeight = 2
+  const tableHeight = Math.max(1, dimensions.height - APP_PADDING_Y * 2 - tableHeaderHeight)
+  const statusLineCount =
+    (query.isPending ? 1 : 0) + (queryError ? 1 : 0) + (snapshot && snapshot.rows.length === 0 ? 2 : 0)
+  const selectedLine = selectedSessionLine(selection, rowsBySection, statusLineCount)
+  const subscribe = useOpenTuiSubscribe()
+
+  useKeymap(
+    dashboardKeymap,
+    {
+      textInputActive: searchFocused || Boolean(addSessionDialog) || Boolean(promptDialog),
+      helpDialog: shortcutsDialogOpen ? { close: () => setShortcutsDialogOpen(false) } : null,
+      addSessionDialog: addSessionDialog
+        ? {
+            worktreeCount: addSessionDialog.worktrees.length,
+            close: () => setAddSessionDialog(undefined),
+            moveWorktree: (delta) =>
+              setAddSessionDialog((current) =>
+                current && current.worktrees.length > 1
+                  ? { ...current, worktreeIndex: nextIndex(current.worktreeIndex, delta, current.worktrees.length) }
+                  : current,
+              ),
+          }
+        : null,
+      promptDialog: promptDialog ? { close: () => setPromptDialog(undefined) } : null,
+      deleteSessionDialog: deleteDialog
+        ? { close: () => setDeleteDialog(undefined), confirm: () => void confirmDeleteSession() }
+        : null,
+      search: searchFocused ? { blur: () => setSearchFocused(false) } : null,
+      listNav:
+        shortcutsDialogOpen || addSessionDialog || promptDialog || deleteDialog || searchFocused
+          ? null
+          : {
+              tabCount: tabs.length,
+              hasSelection: Boolean(currentRow),
+              halfPage: halfPage(tableHeight),
+              refresh: () => void query.refetch(),
+              openAddSession: openAddSessionDialog,
+              openDeleteSession: () => {
+                if (currentRow) setDeleteDialog({ row: currentRow })
+              },
+              openPrompt: () => {
+                if (currentRow) openPromptDialog(currentRow)
+              },
+              openTmux: () => {
+                if (currentRow) void openTmuxSession(currentRow)
+              },
+              focusSearch: () => setSearchFocused(true),
+              openHelp: () => setShortcutsDialogOpen(true),
+              selectTab: (index) => {
+                const tab = tabs[index]
+                if (tab) setActiveTabId(tab.id)
+              },
+              cycleTab: (delta) => {
+                const tab = tabs[nextIndex(activeTabIndex, delta, tabs.length)]
+                setActiveTabId(tab?.id)
+              },
+              moveSelection: (delta) => setSelection((current) => moveSelection(current, delta, rowsBySection)),
+              moveSelectionClamped: (delta) =>
+                setSelection((current) => moveSelectionClamped(current, delta, rowsBySection)),
+              moveTop: () => setSelection((current) => selectionEdge(current, "top", rowsBySection)),
+              moveBottom: () => setSelection((current) => selectionEdge(current, "bottom", rowsBySection)),
+              quit: () => renderer.destroy(),
+              toggleConsole: () => renderer.console.toggle(),
+            },
+      quit: () => renderer.destroy(),
+    },
+    subscribe,
+  )
+
+  useScrollFollowSelected(listRef, selectedLine, SELECTION_SCROLL_EDGE_OFFSET)
 
   useEffect(() => {
     const interval = setInterval(() => void refetch(), POLL_INTERVAL_MS)
@@ -133,149 +204,6 @@ export function DashboardPage() {
       return { section: current.section, index: 0 }
     })
   }, [activeTab?.id, workingCount, needsInputCount, completedCount, setSelection])
-
-  useLayoutEffect(() => {
-    scrollChildIntoViewNearEdge(listRef, selectedElementId, selectionScrollDirection.current)
-    selectionScrollDirection.current = 0
-  }, [selectedElementId])
-
-  useKeyboard((key) => {
-    if (key.ctrl && key.name === "c") {
-      key.preventDefault()
-      renderer.destroy()
-      return
-    }
-    const wasPendingGoToTop = pendingGoToTop.current
-    pendingGoToTop.current = false
-    if (shortcutsDialogOpen) {
-      if (key.name === "escape" || key.name === "?" || key.sequence === "?") setShortcutsDialogOpen(false)
-      return
-    }
-    if (addSessionDialog) {
-      if (key.name === "escape") {
-        setAddSessionDialog(undefined)
-        return
-      }
-      if (addSessionDialog.worktrees.length > 1 && key.name === "tab") {
-        setAddSessionDialog((current) =>
-          current
-            ? {
-                ...current,
-                worktreeIndex: nextIndex(current.worktreeIndex, key.shift ? -1 : 1, current.worktrees.length),
-              }
-            : current,
-        )
-        return
-      }
-      return
-    }
-    if (promptDialog) {
-      if (key.name === "escape") setPromptDialog(undefined)
-      return
-    }
-    if (deleteDialog) {
-      if (key.name === "escape" || key.name === "n") {
-        setDeleteDialog(undefined)
-        return
-      }
-      if (key.name === "return" || key.name === "enter" || key.name === "y") {
-        void confirmDeleteSession()
-      }
-      return
-    }
-    if (key.name === "?" || key.sequence === "?") {
-      key.preventDefault()
-      setShortcutsDialogOpen(true)
-      return
-    }
-    if (searchFocused) {
-      if (key.name === "escape" || key.name === "return" || key.name === "enter") setSearchFocused(false)
-      return
-    }
-    if (key.name === "/" || key.sequence === "/") {
-      key.preventDefault()
-      setSearchFocused(true)
-      return
-    }
-    if (key.name === "escape" || key.name === "q") {
-      renderer.destroy()
-      return
-    }
-    if (key.name === "r") {
-      void query.refetch()
-      return
-    }
-    if (key.name === "a") {
-      openAddSessionDialog()
-      return
-    }
-    if (key.name === "d") {
-      if (currentRow) setDeleteDialog({ row: currentRow })
-      return
-    }
-    if (key.name === "return" || key.name === "enter") {
-      if (currentRow) openPromptDialog(currentRow)
-      return
-    }
-    if (key.name === "o") {
-      if (currentRow) void openTmuxSession(currentRow)
-      return
-    }
-    const numberShortcut = Number(key.sequence)
-    if (Number.isInteger(numberShortcut) && numberShortcut >= 1 && numberShortcut <= 9) {
-      const tab = tabs[numberShortcut - 1]
-      if (tab) setActiveTabId(tab.id)
-      return
-    }
-    if (key.name === "tab") {
-      const tab = tabs[nextIndex(activeTabIndex, key.shift ? -1 : 1, tabs.length)]
-      setActiveTabId(tab?.id)
-      return
-    }
-    if (key.ctrl && key.name === "u") {
-      selectionScrollDirection.current = -1
-      setSelection((current) => moveSelection(current, -halfPage(tableHeight), rowsBySection))
-      return
-    }
-    if (key.ctrl && key.name === "d") {
-      selectionScrollDirection.current = 1
-      setSelection((current) => moveSelection(current, halfPage(tableHeight), rowsBySection))
-      return
-    }
-    if (key.name === "home") {
-      selectionScrollDirection.current = -1
-      setSelection((current) => selectionEdge(current, "top", rowsBySection))
-      return
-    }
-    if (key.name === "end") {
-      selectionScrollDirection.current = 1
-      setSelection((current) => selectionEdge(current, "bottom", rowsBySection))
-      return
-    }
-    if (key.name === "j" || key.name === "down" || (key.ctrl && key.name === "n")) {
-      selectionScrollDirection.current = 1
-      setSelection((current) => moveSelection(current, 1, rowsBySection))
-      return
-    }
-    if (key.name === "k" || key.name === "up" || (key.ctrl && key.name === "p")) {
-      selectionScrollDirection.current = -1
-      setSelection((current) => moveSelection(current, -1, rowsBySection))
-      return
-    }
-    if (key.name === "G" || (key.name === "g" && key.shift) || key.sequence === "G") {
-      selectionScrollDirection.current = 1
-      setSelection((current) => selectionEdge(current, "bottom", rowsBySection))
-      return
-    }
-    if (key.name === "g") {
-      if (wasPendingGoToTop) {
-        selectionScrollDirection.current = -1
-        setSelection((current) => selectionEdge(current, "top", rowsBySection))
-      } else pendingGoToTop.current = true
-      return
-    }
-    if (key.name === "`") renderer.console.toggle()
-  })
 
   function openAddSessionDialog() {
     if (!activeTab) return
@@ -377,9 +305,6 @@ export function DashboardPage() {
     }
   }
 
-  const tableHeaderHeight = 2
-  const tableHeight = Math.max(1, dimensions.height - APP_PADDING_Y * 2 - tableHeaderHeight)
-
   return (
     <box
       style={{
@@ -413,7 +338,7 @@ export function DashboardPage() {
         </box>
         <scrollbox
           ref={listRef}
-          focused={!searchFocused && !shortcutsDialogOpen}
+          focusable={false}
           style={{
             contentOptions: { flexDirection: "column" },
             flexShrink: 0,
@@ -496,6 +421,9 @@ export function DashboardPage() {
           onInput={(value) =>
             setAddSessionDialog((current) => (current ? { ...current, value, error: undefined } : current))
           }
+          onWorktreeSelect={(worktreeIndex) =>
+            setAddSessionDialog((current) => (current ? { ...current, worktreeIndex } : current))
+          }
           onSubmit={(value) => void submitAddSession(value)}
         />
       ) : null}
@@ -530,65 +458,20 @@ function halfPage(height: number): number {
   return Math.max(1, Math.floor(height / 2))
 }
 
-function scrollChildIntoViewNearEdge(
-  scrollRef: React.MutableRefObject<ScrollBoxRenderable | null>,
-  childId: string,
-  direction: -1 | 0 | 1,
-) {
-  let cancelled = false
-  let attempts = 0
+function selectedSessionLine(
+  selection: { section: LaneStatus; index: number },
+  rowsBySection: Record<LaneStatus, SessionRow[]>,
+  prefixLines: number,
+): number | null {
+  if (!rowsBySection[selection.section][selection.index]) return null
 
-  const apply = () => {
-    if (cancelled) return
-    const scrollBox = scrollRef.current
-    if (!scrollBox) return
-    if (scrollBox.viewport.height <= 0) {
-      if (attempts++ < 20) globalThis.setTimeout(apply, 16)
-      return
-    }
-
-    scrollChildIntoMeasuredView(scrollBox, childId, direction)
+  let line = prefixLines
+  for (const section of SECTIONS) {
+    if (section.status === selection.section) return line + 2 + selection.index
+    line += 2 + Math.max(1, rowsBySection[section.status].length) + 1
   }
 
-  apply()
-  return () => {
-    cancelled = true
-  }
-}
-
-function scrollChildIntoMeasuredView(scrollBox: ScrollBoxRenderable, childId: string, direction: -1 | 0 | 1) {
-  
-  const child = scrollBox.content.findDescendantById(childId)
-  if (!child) return
-
-  const childTop = child.y
-  const childBottom = child.y + child.height
-  const viewportTop = scrollBox.viewport.y
-  const viewportBottom = scrollBox.viewport.y + scrollBox.viewport.height
-  const edgeOffset = Math.min(
-    SELECTION_SCROLL_EDGE_OFFSET,
-    Math.max(0, Math.floor((scrollBox.viewport.height - 1) / 2)),
-  )
-
-  if (childTop < viewportTop) {
-    scrollBox.scrollBy({ x: 0, y: childTop - viewportTop })
-    return
-  }
-
-  if (childBottom > viewportBottom) {
-    scrollBox.scrollBy({ x: 0, y: childBottom - viewportBottom })
-    return
-  }
-
-  if (direction < 0 && childTop < viewportTop + edgeOffset) {
-    scrollBox.scrollBy({ x: 0, y: childTop - viewportTop - edgeOffset })
-    return
-  }
-
-  if (direction > 0 && childBottom > viewportBottom - edgeOffset) {
-    scrollBox.scrollBy({ x: 0, y: childBottom - viewportBottom + edgeOffset })
-    return
-  }
+  return null
 }
 
 function fuzzyIncludes(value: string, query: string): boolean {
