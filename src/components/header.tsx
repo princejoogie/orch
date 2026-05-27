@@ -1,29 +1,30 @@
 import { TextAttributes } from "@opentui/core"
 import { countLane, truncate } from "../lib/utils.ts"
 import type { DashboardSnapshot } from "../opencode.ts"
-
-const HEADER_PADDING_X = 2
+import { theme } from "../theme.ts"
 
 export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot; width: number }) {
   const rows = snapshot?.rows ?? []
   const now = Date.now()
-  const stats = `${snapshot?.serverUrl ?? "http://localhost:4096"} · ${rows.length} sessions · ${countLane(rows, "working", now)} working · ${countLane(rows, "needs-input", now)} needs input · ${countLane(rows, "completed", now)} completed`
-  const title = "opencode orchestrator"
-  const statsWidth = Math.max(0, width - title.length - 3)
+  const serverUrl = snapshot?.serverUrl ?? "http://localhost:4096"
 
   return (
     <box
       style={{
-        flexDirection: "row",
+        flexDirection: "column",
         flexShrink: 0,
-        justifyContent: "space-between",
-        paddingLeft: HEADER_PADDING_X,
-        paddingRight: HEADER_PADDING_X,
-        width: width + HEADER_PADDING_X * 2,
+        width,
       }}
     >
-      <text content="opencode orchestrator" style={{ fg: "#7DD3FC", attributes: TextAttributes.BOLD }} />
-      <text content={truncate(stats, statsWidth)} style={{ fg: "#94A3B8" }} />
+      <text content={truncate(serverUrl, width)} style={{ fg: theme.textMuted }} />
+      <text content={`${rows.length} sessions`} style={{ fg: theme.text, marginTop: 1 }} />
+      <text content={`${countLane(rows, "working", now)} working`} style={{ fg: theme.warning }} />
+      <text content={`${countLane(rows, "needs-input", now)} needs input`} style={{ fg: theme.info }} />
+      <text content={`${countLane(rows, "completed", now)} completed`} style={{ fg: theme.success }} />
     </box>
   )
+}
+
+export function HeaderTitle() {
+  return <text content="Opencode Orchestrator" style={{ fg: theme.primary, attributes: TextAttributes.BOLD }} />
 }

@@ -12,6 +12,7 @@ import {
   type Selection,
 } from "../lib/utils.ts"
 import { type SessionRow } from "../opencode.ts"
+import { theme } from "../theme.ts"
 
 function tableLayout(width: number) {
   const gap = 4
@@ -30,16 +31,22 @@ export function TableHeader({ width }: { width: number }) {
 
   return (
     <box style={{ flexDirection: "row", flexWrap: "no-wrap", height: 1, marginBottom: 1, overflow: "hidden", width }}>
-      <text content="  " style={{ fg: "#64748B" }} />
-      <text content={"Title".padEnd(titleWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
-      <text content={gap} style={{ fg: "#64748B" }} />
-      <text content={"Latest".padEnd(messageWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
-      <text content={gap} style={{ fg: "#64748B" }} />
-      <text content={"Worktree".padEnd(worktreeWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
-      <text content={gap} style={{ fg: "#64748B" }} />
-      <text content={"Context".padStart(contextWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
-      <text content={gap} style={{ fg: "#64748B" }} />
-      <text content={"Age".padStart(ageWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
+      <text content="  " style={{ fg: theme.textMuted }} />
+      <text content={"Title".padEnd(titleWidth)} style={{ fg: theme.textMuted, attributes: TextAttributes.BOLD }} />
+      <text content={gap} style={{ fg: theme.textMuted }} />
+      <text content={"Latest".padEnd(messageWidth)} style={{ fg: theme.textMuted, attributes: TextAttributes.BOLD }} />
+      <text content={gap} style={{ fg: theme.textMuted }} />
+      <text
+        content={"Worktree".padEnd(worktreeWidth)}
+        style={{ fg: theme.textMuted, attributes: TextAttributes.BOLD }}
+      />
+      <text content={gap} style={{ fg: theme.textMuted }} />
+      <text
+        content={"Context".padStart(contextWidth)}
+        style={{ fg: theme.textMuted, attributes: TextAttributes.BOLD }}
+      />
+      <text content={gap} style={{ fg: theme.textMuted }} />
+      <text content={"Age".padStart(ageWidth)} style={{ fg: theme.textMuted, attributes: TextAttributes.BOLD }} />
     </box>
   )
 }
@@ -67,11 +74,11 @@ export function SectionView({
       >
         <text
           content={`${active ? "> " : "  "}${section.title}`}
-          style={{ fg: active ? "#F8FAFC" : "#E2E8F0", attributes: TextAttributes.BOLD }}
+          style={{ fg: theme.text, attributes: TextAttributes.BOLD }}
         />
-        <text content={` ${rows.length}`} style={{ fg: "#64748B" }} />
+        <text content={` ${rows.length}`} style={{ fg: theme.textMuted }} />
       </box>
-      {rows.length === 0 ? <text content="  none" style={{ fg: "#475569" }} /> : null}
+      {rows.length === 0 ? <text content="  none" style={{ fg: theme.border }} /> : null}
       {rows.map((row, index) => (
         <SessionItem
           key={row.id}
@@ -101,7 +108,7 @@ function SessionItem({
 }) {
   const now = useNow(80)
   const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
-  const worktreeColor = worktreeColors[row.worktreeName] ?? "#94A3B8"
+  const worktreeColor = worktreeColors[row.worktreeName] ?? theme.textMuted
 
   return (
     <box
@@ -112,29 +119,29 @@ function SessionItem({
         height: 1,
         overflow: "hidden",
         width,
-        backgroundColor: selected ? "#334155" : undefined,
+        backgroundColor: selected ? theme.backgroundElement : undefined,
       }}
     >
       <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
       <text
         content={truncate(row.title, titleWidth).padEnd(titleWidth)}
-        style={{ fg: selected ? "#F8FAFC" : "#E2E8F0", attributes: selected ? TextAttributes.BOLD : undefined }}
+        style={{ fg: theme.text, attributes: selected ? TextAttributes.BOLD : undefined }}
       />
-      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
       <text
         content={truncate(preview(row.latestMessage), messageWidth).padEnd(messageWidth)}
-        style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
+        style={{ fg: selected ? theme.text : theme.textMuted }}
       />
-      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
       <text content="● " style={{ fg: worktreeColor }} />
       <text
         content={truncate(row.worktreeName, Math.max(1, worktreeWidth - 2)).padEnd(worktreeWidth - 2)}
-        style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
+        style={{ fg: selected ? theme.text : theme.textMuted }}
       />
-      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-      <text content={formatContextUsage(row).padStart(contextWidth)} style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }} />
-      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-      <text content={formatAge(row.updated, now).padStart(ageWidth)} style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }} />
+      <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
+      <text content={formatContextUsage(row).padStart(contextWidth)} style={{ fg: theme.text }} />
+      <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
+      <text content={formatAge(row.updated, now).padStart(ageWidth)} style={{ fg: theme.text }} />
     </box>
   )
 }
@@ -152,9 +159,9 @@ function formatTokenCount(tokens: number): string {
 }
 
 function sectionMarkerColor(status: LaneStatus): string {
-  if (status === "working") return "#FBBF24"
-  if (status === "needs-input") return "#38BDF8"
-  return "#86EFAC"
+  if (status === "working") return theme.warning
+  if (status === "needs-input") return theme.info
+  return theme.success
 }
 
 function sectionMarker(section: Section, now: Date): string {

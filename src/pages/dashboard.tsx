@@ -1,13 +1,14 @@
 import { type ScrollBoxRenderable } from "@opentui/core"
 import { useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect, useMemo, useRef, useState } from "react"
-import { Header } from "../components/header.tsx"
-import { AddSessionDialog, DeleteSessionDialog, PromptDialog } from "../components/session-dialogs.tsx"
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
+import { Header, HeaderTitle } from "../components/header.tsx"
+import { AddSessionDialog, DeleteSessionDialog, PromptDialog, ShortcutsDialog } from "../components/session-dialogs.tsx"
 import { SectionView, TableHeader } from "../components/session-table.tsx"
 import { SearchInput } from "../components/ui/input.tsx"
 import { ProjectTabs } from "../components/ui/tabs.tsx"
 import { useNow } from "../hooks/use-now.ts"
+import { theme } from "../theme.ts"
 import {
   clamp,
   groupRowsByProject,
@@ -19,7 +20,6 @@ import {
   sectionElementId,
   selectedRow,
   selectionEdge,
-  truncate,
   worktreeOptions,
   type AddSessionDialogState,
   type DeleteSessionDialogState,
@@ -33,8 +33,9 @@ import { useDashboardStore } from "./dashboard.store.ts"
 const POLL_INTERVAL_MS = 2_000
 const APP_PADDING_X = 2
 const APP_PADDING_Y = 1
-const HEADER_MARGIN_BOTTOM = 1
-const TABS_MARGIN_BOTTOM = 1
+const SIDEBAR_BACKGROUND = theme.backgroundPanel
+const SIDEBAR_PADDING_X = 2
+const SIDEBAR_PADDING_Y = 1
 const SELECTION_SCROLL_EDGE_OFFSET = 3
 
 export function DashboardPage() {
@@ -47,6 +48,8 @@ export function DashboardPage() {
   const [addSessionDialog, setAddSessionDialog] = useState<AddSessionDialogState>()
   const [promptDialog, setPromptDialog] = useState<PromptDialogState>()
   const [deleteDialog, setDeleteDialog] = useState<DeleteSessionDialogState>()
+  const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
+  const [hoveredRowId, setHoveredRowId] = useState<string>()
 
   const activeTabId = useDashboardStore((store) => store.activeTabId)
   const selection = useDashboardStore((store) => store.selection)
@@ -65,8 +68,14 @@ export function DashboardPage() {
 
   const snapshot = query.data
   const queryError = query.error instanceof Error ? query.error.message : query.error ? String(query.error) : undefined
-  const width = Math.max(30, dimensions.width - APP_PADDING_X * 2)
-  const tableWidth = width
+  const sidebarWidth = Math.min(
+    Math.max(24, Math.floor(dimensions.width * 0.32)),
+    Math.max(24, dimensions.width - 42),
+    42,
+  )
+  const mainPanelWidth = Math.max(1, dimensions.width - sidebarWidth)
+  const tableWidth = Math.max(1, mainPanelWidth - APP_PADDING_X * 2)
+  const sidebarContentWidth = Math.max(1, sidebarWidth - SIDEBAR_PADDING_X * 2)
   const tabs = useMemo(() => groupRowsByProject(snapshot?.rows ?? []), [snapshot?.rows])
   const activeTabIndex = activeTabId
     ? Math.max(
@@ -125,8 +134,8 @@ export function DashboardPage() {
     })
   }, [activeTab?.id, workingCount, needsInputCount, completedCount, setSelection])
 
-  useEffect(() => {
-    scrollChildIntoViewNearEdge(listRef.current, selectedElementId, selectionScrollDirection.current)
+  useLayoutEffect(() => {
+    scrollChildIntoViewNearEdge(listRef, selectedElementId, selectionScrollDirection.current)
     selectionScrollDirection.current = 0
   }, [selectedElementId])
 
@@ -138,6 +147,10 @@ export function DashboardPage() {
     }
     const wasPendingGoToTop = pendingGoToTop.current
     pendingGoToTop.current = false
+    if (shortcutsDialogOpen) {
+      if (key.name === "escape" || key.name === "?" || key.sequence === "?") setShortcutsDialogOpen(false)
+      return
+    }
     if (addSessionDialog) {
       if (key.name === "escape") {
         setAddSessionDialog(undefined)
@@ -168,6 +181,11 @@ export function DashboardPage() {
       if (key.name === "return" || key.name === "enter" || key.name === "y") {
         void confirmDeleteSession()
       }
+      return
+    }
+    if (key.name === "?" || key.sequence === "?") {
+      key.preventDefault()
+      setShortcutsDialogOpen(true)
       return
     }
     if (searchFocused) {
@@ -203,17 +221,43 @@ export function DashboardPage() {
       if (currentRow) void openTmuxSession(currentRow)
       return
     }
+    const numberShortcut = Number(key.sequence)
+    if (Number.isInteger(numberShortcut) && numberShortcut >= 1 && numberShortcut <= 9) {
+      const tab = tabs[numberShortcut - 1]
+      if (tab) setActiveTabId(tab.id)
+      return
+    }
     if (key.name === "tab") {
       const tab = tabs[nextIndex(activeTabIndex, key.shift ? -1 : 1, tabs.length)]
       setActiveTabId(tab?.id)
       return
     }
-    if (key.name === "j" || key.name === "down") {
+    if (key.ctrl && key.name === "u") {
+      selectionScrollDirection.current = -1
+      setSelection((current) => moveSelection(current, -halfPage(tableHeight), rowsBySection))
+      return
+    }
+    if (key.ctrl && key.name === "d") {
+      selectionScrollDirection.current = 1
+      setSelection((current) => moveSelection(current, halfPage(tableHeight), rowsBySection))
+      return
+    }
+    if (key.name === "home") {
+      selectionScrollDirection.current = -1
+      setSelection((current) => selectionEdge(current, "top", rowsBySection))
+      return
+    }
+    if (key.name === "end") {
+      selectionScrollDirection.current = 1
+      setSelection((current) => selectionEdge(current, "bottom", rowsBySection))
+      return
+    }
+    if (key.name === "j" || key.name === "down" || (key.ctrl && key.name === "n")) {
       selectionScrollDirection.current = 1
       setSelection((current) => moveSelection(current, 1, rowsBySection))
       return
     }
-    if (key.name === "k" || key.name === "up") {
+    if (key.name === "k" || key.name === "up" || (key.ctrl && key.name === "p")) {
       selectionScrollDirection.current = -1
       setSelection((current) => moveSelection(current, -1, rowsBySection))
       return
@@ -333,99 +377,116 @@ export function DashboardPage() {
     }
   }
 
-  const footerInputWidth = Math.min(44, Math.max(16, Math.floor(width * 0.4)))
-  const footerHint =
-    "enter prompt · / search · o open tmux · d delete · a new session · tab/shift-tab project · j/k move · r refresh · q quit"
-  const footerHintWidth = Math.max(0, width - footerInputWidth - 1)
-  const headerHeight = 1 + HEADER_MARGIN_BOTTOM
-  const tabsHeight = 1 + TABS_MARGIN_BOTTOM
   const tableHeaderHeight = 2
-  const footerHeight = 3
-  const tableHeight = Math.max(
-    1,
-    dimensions.height - APP_PADDING_Y * 2 - headerHeight - tabsHeight - tableHeaderHeight - footerHeight,
-  )
+  const tableHeight = Math.max(1, dimensions.height - APP_PADDING_Y * 2 - tableHeaderHeight)
 
   return (
     <box
       style={{
         width: dimensions.width,
         height: dimensions.height,
-        flexDirection: "column",
-        backgroundColor: "#000000",
-        paddingTop: APP_PADDING_Y,
-        paddingBottom: APP_PADDING_Y,
+        flexDirection: "row",
+        backgroundColor: theme.background,
       }}
     >
-      <box style={{ flexShrink: 0, marginBottom: HEADER_MARGIN_BOTTOM, width: dimensions.width }}>
-        <Header snapshot={snapshot} width={width} />
-      </box>
-      <box style={{ flexShrink: 0, marginBottom: TABS_MARGIN_BOTTOM, width: dimensions.width }}>
-        <ProjectTabs tabs={tabs} activeIndex={activeTabIndex} width={width} />
+      <box
+        style={{
+          flexDirection: "column",
+          flexShrink: 0,
+          width: mainPanelWidth,
+          height: dimensions.height,
+          backgroundColor: theme.background,
+          paddingTop: APP_PADDING_Y,
+          paddingBottom: APP_PADDING_Y,
+        }}
+      >
+        <box
+          style={{
+            flexShrink: 0,
+            height: tableHeaderHeight,
+            paddingLeft: APP_PADDING_X,
+            paddingRight: APP_PADDING_X,
+            width: mainPanelWidth,
+          }}
+        >
+          <TableHeader width={tableWidth} />
+        </box>
+        <scrollbox
+          ref={listRef}
+          focused={!searchFocused && !shortcutsDialogOpen}
+          style={{
+            contentOptions: { flexDirection: "column" },
+            flexShrink: 0,
+            height: tableHeight,
+            width: mainPanelWidth,
+            wrapperOptions: { width: tableWidth },
+            minHeight: 0,
+            paddingLeft: APP_PADDING_X,
+            paddingRight: APP_PADDING_X,
+            scrollX: false,
+            scrollY: true,
+            verticalScrollbarOptions: { showArrows: false },
+            viewportCulling: true,
+          }}
+        >
+          {query.isPending ? <text content="loading sessions…" style={{ fg: theme.info }} /> : null}
+          {queryError ? <text content={`error: ${queryError}`} style={{ fg: theme.error }} /> : null}
+          {snapshot && snapshot.rows.length === 0 ? (
+            <box style={{ flexDirection: "column" }}>
+              <text content="No sessions found on the opencode persistence server." style={{ fg: theme.warning }} />
+              <text content={snapshot.serverUrl} style={{ fg: theme.textMuted }} />
+            </box>
+          ) : null}
+          {SECTIONS.map((section) => (
+            <SectionView
+              key={section.status}
+              section={section}
+              rows={rowsBySection[section.status]}
+              worktreeColors={activeTab?.worktreeColors ?? {}}
+              selection={selection}
+              active={activeSection === section.status}
+              width={tableWidth}
+              hoveredRowId={hoveredRowId}
+              onRowHover={setHoveredRowId}
+              onRowSelect={(nextSelection) => setSelection(nextSelection)}
+            />
+          ))}
+        </scrollbox>
       </box>
       <box
         style={{
+          flexDirection: "column",
           flexShrink: 0,
-          height: tableHeaderHeight,
-          paddingLeft: APP_PADDING_X,
-          paddingRight: APP_PADDING_X,
-          width: dimensions.width,
+          width: sidebarWidth,
+          height: dimensions.height,
+          backgroundColor: SIDEBAR_BACKGROUND,
+          paddingLeft: SIDEBAR_PADDING_X,
+          paddingRight: SIDEBAR_PADDING_X,
+          paddingTop: SIDEBAR_PADDING_Y,
+          paddingBottom: SIDEBAR_PADDING_Y,
         }}
       >
-        <TableHeader width={tableWidth} />
-      </box>
-      <scrollbox
-        ref={listRef}
-        focused={!searchFocused}
-        style={{
-          contentOptions: { flexDirection: "column" },
-          flexShrink: 0,
-          height: tableHeight,
-          width: dimensions.width,
-          wrapperOptions: { width: tableWidth },
-          minHeight: 0,
-          paddingLeft: APP_PADDING_X,
-          paddingRight: APP_PADDING_X,
-          scrollX: false,
-          scrollY: true,
-          verticalScrollbarOptions: { showArrows: false },
-          viewportCulling: true,
-        }}
-      >
-        {query.isPending ? <text content="loading sessions…" style={{ fg: "#38BDF8" }} /> : null}
-        {queryError ? <text content={`error: ${queryError}`} style={{ fg: "#F87171" }} /> : null}
-        {snapshot && snapshot.rows.length === 0 ? (
-          <box style={{ flexDirection: "column" }}>
-            <text content="No sessions found on the opencode persistence server." style={{ fg: "#FDE68A" }} />
-            <text content={snapshot.serverUrl} style={{ fg: "#64748B" }} />
-          </box>
-        ) : null}
-        {SECTIONS.map((section) => (
-          <SectionView
-            key={section.status}
-            section={section}
-            rows={rowsBySection[section.status]}
-            worktreeColors={activeTab?.worktreeColors ?? {}}
-            selection={selection}
-            active={activeSection === section.status}
-            width={tableWidth}
+        <box style={{ flexShrink: 0, marginBottom: 1, width: sidebarContentWidth }}>
+          <HeaderTitle />
+        </box>
+        <SearchInput
+          value={searchValue}
+          focused={searchFocused}
+          width={sidebarContentWidth}
+          onInput={setSearchValue}
+          onFocus={() => setSearchFocused(true)}
+        />
+        <box style={{ flexShrink: 0, marginTop: 2, width: sidebarContentWidth }}>
+          <Header snapshot={snapshot} width={sidebarContentWidth} />
+        </box>
+        <box style={{ flexShrink: 0, marginTop: 2, width: sidebarContentWidth }}>
+          <ProjectTabs
+            tabs={tabs}
+            activeIndex={activeTabIndex}
+            width={sidebarContentWidth}
+            onSelect={(tab) => setActiveTabId(tab.id)}
           />
-        ))}
-      </scrollbox>
-      <box
-        style={{
-          flexDirection: "row",
-          flexShrink: 0,
-          height: footerHeight,
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingLeft: APP_PADDING_X,
-          paddingRight: APP_PADDING_X,
-          width: dimensions.width,
-        }}
-      >
-        <SearchInput value={searchValue} focused={searchFocused} width={footerInputWidth} onInput={setSearchValue} />
-        <text content={truncate(footerHint, footerHintWidth)} style={{ fg: "#64748B" }} />
+        </box>
       </box>
       {addSessionDialog ? (
         <AddSessionDialog
@@ -452,6 +513,7 @@ export function DashboardPage() {
       {deleteDialog ? (
         <DeleteSessionDialog state={deleteDialog} width={dimensions.width} height={dimensions.height} />
       ) : null}
+      {shortcutsDialogOpen ? <ShortcutsDialog width={dimensions.width} height={dimensions.height} /> : null}
     </box>
   )
 }
@@ -464,9 +526,38 @@ function fuzzySessionMatch(row: SessionRow, query: string): boolean {
   return terms.every((term) => fuzzyIncludes(haystack, term))
 }
 
-function scrollChildIntoViewNearEdge(scrollBox: ScrollBoxRenderable | null, childId: string, direction: -1 | 0 | 1) {
-  if (!scrollBox) return
+function halfPage(height: number): number {
+  return Math.max(1, Math.floor(height / 2))
+}
 
+function scrollChildIntoViewNearEdge(
+  scrollRef: React.MutableRefObject<ScrollBoxRenderable | null>,
+  childId: string,
+  direction: -1 | 0 | 1,
+) {
+  let cancelled = false
+  let attempts = 0
+
+  const apply = () => {
+    if (cancelled) return
+    const scrollBox = scrollRef.current
+    if (!scrollBox) return
+    if (scrollBox.viewport.height <= 0) {
+      if (attempts++ < 20) globalThis.setTimeout(apply, 16)
+      return
+    }
+
+    scrollChildIntoMeasuredView(scrollBox, childId, direction)
+  }
+
+  apply()
+  return () => {
+    cancelled = true
+  }
+}
+
+function scrollChildIntoMeasuredView(scrollBox: ScrollBoxRenderable, childId: string, direction: -1 | 0 | 1) {
+  
   const child = scrollBox.content.findDescendantById(childId)
   if (!child) return
 

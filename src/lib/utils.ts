@@ -1,4 +1,5 @@
 import { formatDirectory, type SessionRow, type SessionStatus } from "../opencode.ts"
+import { theme } from "../theme.ts"
 
 export { formatDirectory }
 
@@ -6,16 +7,14 @@ export const NEEDS_INPUT_WINDOW_MS = 60 * 60 * 1000
 export const WORKING_MARKERS = [" ", ".", "o", "O", "@", "*", " "]
 
 const WORKTREE_COLORS = [
-  "#F87171",
-  "#22D3EE",
-  "#FBBF24",
-  "#A78BFA",
-  "#34D399",
-  "#F472B6",
-  "#60A5FA",
-  "#FB923C",
-  "#A3E635",
-  "#F9A8D4",
+  theme.error,
+  theme.info,
+  theme.warning,
+  theme.accent,
+  theme.success,
+  theme.secondary,
+  theme.primary,
+  theme.textMuted,
 ]
 
 export type LaneStatus = SessionStatus | "needs-input"

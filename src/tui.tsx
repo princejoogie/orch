@@ -3,6 +3,7 @@ import { createRoot } from "@opentui/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { DashboardStoreProvider } from "./pages/dashboard.store.ts"
 import { DashboardPage } from "./pages/dashboard.tsx"
+import { theme } from "./theme.ts"
 
 interface RunTuiOptions {
   args: string[]
@@ -23,7 +24,7 @@ export async function runTui(_options: RunTuiOptions): Promise<void> {
     onDestroy: resolveDone,
   })
 
-  renderer.setBackgroundColor("#000000")
+  renderer.setBackgroundColor(theme.background)
   const queryClient = new QueryClient()
   createRoot(renderer).render(
     <QueryClientProvider client={queryClient}>

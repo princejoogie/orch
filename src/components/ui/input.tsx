@@ -1,6 +1,7 @@
 import { type InputRenderable } from "@opentui/core"
 import { useRef } from "react"
 import type { SearchInputProps } from "../../lib/utils.ts"
+import { theme } from "../../theme.ts"
 
 export function SearchInput({ value, focused, width, onInput }: SearchInputProps) {
   const inputRef = useRef<InputRenderable>(null)
@@ -11,7 +12,7 @@ export function SearchInput({ value, focused, width, onInput }: SearchInputProps
       <box
         style={{
           border: true,
-          borderColor: focused ? "#38BDF8" : value ? "#475569" : "#1E293B",
+          borderColor: focused ? theme.borderActive : value ? theme.border : theme.borderSubtle,
           height: 3,
           paddingLeft: 1,
           paddingRight: 1,

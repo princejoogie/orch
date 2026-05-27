@@ -17,6 +17,7 @@ import {
   type DeleteSessionDialogState,
   type PromptDialogState,
 } from "../lib/utils.ts"
+import { theme } from "../theme.ts"
 
 export function PromptDialog({
   state,
@@ -150,6 +151,51 @@ export function DeleteSessionDialog({
       </DialogDescription>
       <DialogError error={state.error} width={dialogWidth} />
       <DialogHint>Enter/y confirm · Esc/n cancel</DialogHint>
+    </Dialog>
+  )
+}
+
+const SHORTCUTS = [
+  ["Open this help", "?"],
+  ["Prompt selected session", "Enter"],
+  ["Focus search", "/"],
+  ["Open selected in tmux", "o"],
+  ["Delete selected session", "d"],
+  ["Create new session", "a"],
+  ["Next project", "Tab"],
+  ["Previous project", "Shift-Tab"],
+  ["Move selection down", "j / Down"],
+  ["Move selection up", "k / Up"],
+  ["Jump to top", "gg"],
+  ["Jump to bottom", "G"],
+  ["Refresh sessions", "r"],
+  ["Toggle console", "`"],
+  ["Quit", "q / Esc"],
+] as const
+
+export function ShortcutsDialog({ width, height }: { width: number; height: number }) {
+  const dialogWidth = Math.min(Math.max(44, Math.floor(width * 0.45)), 64, width - 4)
+  const descriptionWidth = Math.max(12, dialogWidth - 18)
+  const dialogHeight = Math.min(height - 2, SHORTCUTS.length + 5)
+
+  return (
+    <Dialog screenWidth={width} screenHeight={height} width={dialogWidth} height={dialogHeight}>
+      <DialogTitle>Keyboard shortcuts</DialogTitle>
+      <box style={{ flexDirection: "column", marginTop: 1, marginBottom: 1 }}>
+        {SHORTCUTS.map(([description, shortcut]) => (
+          <box key={description} style={{ flexDirection: "row", width: dialogWidth - 4 }}>
+            <text
+              content={truncate(description, descriptionWidth).padEnd(descriptionWidth)}
+              style={{ fg: theme.text }}
+            />
+            <text
+              content={shortcut.padStart(Math.max(1, dialogWidth - 4 - descriptionWidth))}
+              style={{ fg: theme.text }}
+            />
+          </box>
+        ))}
+      </box>
+      <DialogHint>Esc close</DialogHint>
     </Dialog>
   )
 }

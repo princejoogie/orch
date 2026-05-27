@@ -1,15 +1,16 @@
 import { TextAttributes, type KeyBinding, type TextareaRenderable } from "@opentui/core"
 import { useRef, type ReactNode } from "react"
 import { truncate, type WrappedLine } from "../../lib/utils.ts"
+import { theme } from "../../theme.ts"
 
-const DIALOG_BACKGROUND = "#0F172A"
-const DIALOG_BORDER = "#38BDF8"
-const DIALOG_DANGER = "#F87171"
-const DIALOG_FIELD_BORDER = "#334155"
-const DIALOG_TITLE = "#F8FAFC"
-const DIALOG_TEXT = "#CBD5E1"
-const DIALOG_MUTED = "#94A3B8"
-const DIALOG_HINT = "#64748B"
+const DIALOG_BACKGROUND = theme.backgroundPanel
+const DIALOG_BORDER = theme.info
+const DIALOG_DANGER = theme.error
+const DIALOG_FIELD_BORDER = theme.borderSubtle
+const DIALOG_TITLE = theme.text
+const DIALOG_TEXT = theme.text
+const DIALOG_MUTED = theme.textMuted
+const DIALOG_HINT = theme.textMuted
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
@@ -68,7 +69,7 @@ export function DialogDescription({
   danger?: boolean
   marginTop?: number
 }) {
-  return <text content={children} style={{ fg: danger ? "#FCA5A5" : DIALOG_MUTED, marginTop }} />
+  return <text content={children} style={{ fg: danger ? DIALOG_DANGER : DIALOG_MUTED, marginTop }} />
 }
 
 export function DialogOption({ children, selected }: { children: string; selected: boolean }) {
