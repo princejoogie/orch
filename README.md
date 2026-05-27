@@ -2,7 +2,7 @@
 
 Terminal orchestrator for [opencode](https://opencode.ai/) with native git worktree and tmux support.
 
-![orch terminal dashboard](./assets/orch_demo_worktrees.png)
+<img width="2556" height="1371" alt="image" src="https://github.com/user-attachments/assets/8e03f0f6-8c81-4205-91a3-62557e8c6d8e" />
 
 `orch` connects to an opencode persistence server, shows recent unarchived sessions, groups them by project, and lets you jump back into the right tmux workspace. It is built with Bun, React 19, and OpenTUI.
 
