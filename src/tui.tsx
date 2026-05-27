@@ -10,12 +10,14 @@ import {
   sendPrompt,
   type SessionRow,
 } from "./opencode.ts"
+import { openTmuxSessionForRow } from "./tmux.ts"
 import {
   AddSessionDialog,
   Header,
   PromptDialog,
   ProjectTabs,
   SECTIONS,
+  SearchInput,
   SectionView,
   TableHeader,
   groupRowsByProject,
@@ -23,6 +25,7 @@ import {
   nextIndex,
   rowElementId,
   rowInLane,
+  selectionEdge,
   sectionElementId,
   selectedRow,
   worktreeOptions,
@@ -42,11 +45,14 @@ function App() {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const listRef = useRef<ScrollBoxRenderable>(null)
+  const pendingGoToTop = useRef(false)
   const pendingLatestMessages = useRef(new Set<string>())
   const pendingContextUsage = useRef(new Set<string>())
   const [now, setNow] = useState(() => new Date())
-  const [activeTabIndex, setActiveTabIndex] = useState(0)
+  const [activeTabId, setActiveTabId] = useState<string | undefined>()
   const [selection, setSelection] = useState<Selection>({ section: "working", index: 0 })
+  const [searchValue, setSearchValue] = useState("")
+  const [searchFocused, setSearchFocused] = useState(false)
   const [promptDialog, setPromptDialog] = useState<PromptDialogState | undefined>()
   const [addSessionDialog, setAddSessionDialog] = useState<AddSessionDialogState | undefined>()
   const [latestMessages, setLatestMessages] = useState<Record<string, { updated: number; text: string }>>({})
@@ -56,31 +62,35 @@ function App() {
   const query = useQuery({
     queryKey: ["opencode-sessions"],
     queryFn: () => discoverOpencode(),
-    refetchInterval: POLL_INTERVAL_MS,
-    refetchIntervalInBackground: true,
   })
+  const { refetch } = query
 
   const snapshot = query.data
   const queryError = query.error instanceof Error ? query.error.message : query.error ? String(query.error) : undefined
   const width = Math.max(30, dimensions.width - 6)
   const tabs = useMemo(() => groupRowsByProject(snapshot?.rows ?? []), [snapshot?.rows])
+  const activeTabIndex = activeTabId
+    ? Math.max(
+        0,
+        tabs.findIndex((tab) => tab.id === activeTabId),
+      )
+    : 0
   const activeTab = tabs[activeTabIndex]
+  const activeRows = useMemo(
+    () => withLatestMessages(withContextUsage(activeTab?.rows ?? [], contextUsage), latestMessages),
+    [activeTab?.rows, contextUsage, latestMessages],
+  )
+  const filteredRows = useMemo(
+    () => activeRows.filter((row) => fuzzySessionMatch(row, searchValue)),
+    [activeRows, searchValue],
+  )
   const rowsBySection = useMemo(
     () => ({
-      working: withLatestMessages(
-        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "working", now)) ?? [], contextUsage),
-        latestMessages,
-      ),
-      "needs-input": withLatestMessages(
-        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "needs-input", now)) ?? [], contextUsage),
-        latestMessages,
-      ),
-      completed: withLatestMessages(
-        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "completed", now)) ?? [], contextUsage),
-        latestMessages,
-      ),
+      working: filteredRows.filter((row) => rowInLane(row, "working", now)),
+      "needs-input": filteredRows.filter((row) => rowInLane(row, "needs-input", now)),
+      completed: filteredRows.filter((row) => rowInLane(row, "completed", now)),
     }),
-    [activeTab?.rows, contextUsage, latestMessages, now],
+    [filteredRows, now],
   )
   const activeSection = selection.section
   const currentRow = selectedRow(selection, rowsBySection)
@@ -94,8 +104,17 @@ function App() {
   }, [])
 
   useEffect(() => {
-    setActiveTabIndex((current) => clamp(current, 0, Math.max(0, tabs.length - 1)))
-  }, [tabs.length])
+    const interval = setInterval(() => void refetch(), POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [refetch])
+
+  useEffect(() => {
+    setActiveTabId((current) => {
+      if (tabs.length === 0) return undefined
+      if (current && tabs.some((tab) => tab.id === current)) return current
+      return tabs[0]?.id
+    })
+  }, [tabs])
 
   useEffect(() => {
     if (!activeTab) return
@@ -168,6 +187,8 @@ function App() {
       renderer.destroy()
       return
     }
+    const wasPendingGoToTop = pendingGoToTop.current
+    pendingGoToTop.current = false
     if (addSessionDialog) {
       if (key.name === "escape") {
         setAddSessionDialog(undefined)
@@ -190,6 +211,15 @@ function App() {
       if (key.name === "escape") setPromptDialog(undefined)
       return
     }
+    if (searchFocused) {
+      if (key.name === "escape" || key.name === "return" || key.name === "enter") setSearchFocused(false)
+      return
+    }
+    if (key.name === "/" || key.sequence === "/") {
+      key.preventDefault()
+      setSearchFocused(true)
+      return
+    }
     if (key.name === "escape" || key.name === "q") {
       renderer.destroy()
       return
@@ -202,12 +232,17 @@ function App() {
       openAddSessionDialog()
       return
     }
+    if (key.name === "o") {
+      if (currentRow) void openTmuxSession(currentRow)
+      return
+    }
     if (key.name === "return" || key.name === "enter") {
       if (currentRow) openPromptDialog(currentRow)
       return
     }
     if (key.name === "tab") {
-      setActiveTabIndex((current) => nextIndex(current, key.shift ? -1 : 1, tabs.length))
+      const tab = tabs[nextIndex(activeTabIndex, key.shift ? -1 : 1, tabs.length)]
+      setActiveTabId(tab?.id)
       return
     }
     if (key.name === "j" || key.name === "down") {
@@ -216,6 +251,15 @@ function App() {
     }
     if (key.name === "k" || key.name === "up") {
       setSelection((current) => moveSelection(current, -1, rowsBySection))
+      return
+    }
+    if (key.name === "G" || (key.name === "g" && key.shift) || key.sequence === "G") {
+      setSelection((current) => selectionEdge(current, "bottom", rowsBySection))
+      return
+    }
+    if (key.name === "g") {
+      if (wasPendingGoToTop) setSelection((current) => selectionEdge(current, "top", rowsBySection))
+      else pendingGoToTop.current = true
       return
     }
     if (key.name === "d") {
@@ -245,6 +289,15 @@ function App() {
       .catch(() => {
         setPromptDialog((current) => (current?.row.id === row.id ? { ...current, loadingPreview: false } : current))
       })
+  }
+
+  async function openTmuxSession(row: SessionRow) {
+    try {
+      await openTmuxSessionForRow(row)
+      renderer.destroy()
+    } catch (tmuxError) {
+      console.error(tmuxError instanceof Error ? tmuxError.message : String(tmuxError))
+    }
   }
 
   async function submitPrompt(value: string) {
@@ -313,13 +366,13 @@ function App() {
         padding: 1,
       }}
     >
-      <Header snapshot={snapshot} fetching={query.isFetching} />
+      <Header snapshot={snapshot} />
       {query.isPending ? <text content="loading sessions…" style={{ fg: "#38BDF8", marginTop: 1 }} /> : null}
       {queryError ? <text content={`error: ${queryError}`} style={{ fg: "#F87171", marginTop: 1 }} /> : null}
       <ProjectTabs tabs={tabs} activeIndex={activeTabIndex} width={width} />
       <scrollbox
         ref={listRef}
-        focused
+        focused={!searchFocused}
         style={{
           contentOptions: { flexDirection: "column" },
           flexDirection: "column",
@@ -352,9 +405,12 @@ function App() {
           />
         ))}
       </scrollbox>
-      <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+      <box
+        style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 1 }}
+      >
+        <SearchInput value={searchValue} focused={searchFocused} width={width} onInput={setSearchValue} />
         <text
-          content="enter prompt · a new session · tab/shift-tab project · j/k move · r refresh · q quit"
+          content="enter prompt · / search · o open tmux · a new session · tab/shift-tab project · j/k move · r refresh · q quit"
           style={{ fg: "#64748B" }}
         />
       </box>
@@ -400,6 +456,23 @@ function withContextUsage(
     if (!usage || usage.updated !== row.updated) return row
     return { ...row, contextTokens: usage.tokens, contextPercent: usage.percent }
   })
+}
+
+function fuzzySessionMatch(row: SessionRow, query: string): boolean {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  if (terms.length === 0) return true
+
+  const haystack = `${row.title} ${row.worktreeName}`.toLowerCase()
+  return terms.every((term) => fuzzyIncludes(haystack, term))
+}
+
+function fuzzyIncludes(value: string, query: string): boolean {
+  let queryIndex = 0
+  for (const character of value) {
+    if (character === query[queryIndex]) queryIndex += 1
+    if (queryIndex === query.length) return true
+  }
+  return query.length === 0
 }
 
 export async function runTui(_options: RunTuiOptions): Promise<void> {

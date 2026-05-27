@@ -11,6 +11,7 @@ Usage:
   orch --version    Show the current version
 
 Keys:
+  o                 Open selected project/worktree in tmux
   r                 Refresh the opencode server snapshot
   ` +
   "`" +

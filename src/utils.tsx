@@ -1,4 +1,4 @@
-import { TextAttributes, type KeyBinding, type TextareaRenderable } from "@opentui/core"
+import { TextAttributes, type InputRenderable, type KeyBinding, type TextareaRenderable } from "@opentui/core"
 import { useRef } from "react"
 import { formatDirectory, type DashboardSnapshot, type SessionRow, type SessionStatus } from "./opencode.ts"
 
@@ -68,6 +68,13 @@ export type WrappedLine = {
   text: string
 }
 
+export type SearchInputProps = {
+  value: string
+  focused: boolean
+  width: number
+  onInput: (value: string) => void
+}
+
 export type ProjectTab = {
   id: string
   title: string
@@ -104,7 +111,7 @@ export function preview(value: string): string {
 }
 
 export function wrapText(value: string, width: number, maxLines: number): WrappedLine[] {
-  const source = value.trimEnd()
+  const source = value.replace(/\r\n?/g, "\n").trimEnd()
   if (!source.trim()) return [{ key: "empty", text: "No previous agent message." }]
   if (width <= 1) return [{ key: "narrow", text: "" }]
 
@@ -249,9 +256,7 @@ export function moveSelection(
   delta: number,
   rowsBySection: Record<LaneStatus, SessionRow[]>,
 ): Selection {
-  const entries = SECTIONS.flatMap((section) =>
-    rowsBySection[section.status].map((row, index) => ({ section: section.status, index, row })),
-  )
+  const entries = selectableEntries(rowsBySection)
   if (entries.length === 0) return { section: selection.section, index: 0 }
 
   const currentIndex = entries.findIndex(
@@ -261,15 +266,33 @@ export function moveSelection(
   return { section: next.section, index: next.index }
 }
 
-export function Header({ snapshot, fetching }: { snapshot?: DashboardSnapshot; fetching: boolean }) {
+export function selectionEdge(
+  selection: Selection,
+  edge: "top" | "bottom",
+  rowsBySection: Record<LaneStatus, SessionRow[]>,
+): Selection {
+  const entries = selectableEntries(rowsBySection)
+  if (entries.length === 0) return { section: selection.section, index: 0 }
+
+  const next = edge === "top" ? entries[0]! : entries[entries.length - 1]!
+  return { section: next.section, index: next.index }
+}
+
+function selectableEntries(rowsBySection: Record<LaneStatus, SessionRow[]>) {
+  return SECTIONS.flatMap((section) =>
+    rowsBySection[section.status].map((_row, index) => ({ section: section.status, index })),
+  )
+}
+
+export function Header({ snapshot }: { snapshot?: DashboardSnapshot }) {
   const rows = snapshot?.rows ?? []
   const now = Date.now()
   return (
     <box style={{ flexDirection: "row", justifyContent: "space-between" }}>
-      <text content="orch" style={{ fg: "#7DD3FC", attributes: TextAttributes.BOLD }} />
+      <text content="opencode orchestrator" style={{ fg: "#7DD3FC", attributes: TextAttributes.BOLD }} />
       <text
-        content={`${snapshot?.serverUrl ?? "http://localhost:4096"} · ${rows.length} sessions · ${countLane(rows, "working", now)} working · ${countLane(rows, "needs-input", now)} needs input · ${countLane(rows, "completed", now)} completed · polled ${formatClock(snapshot?.scannedAt)}${fetching ? " · fetching" : ""}`}
-        style={{ fg: fetching ? "#38BDF8" : "#94A3B8" }}
+        content={`${snapshot?.serverUrl ?? "http://localhost:4096"} · ${rows.length} sessions · ${countLane(rows, "working", now)} working · ${countLane(rows, "needs-input", now)} needs input · ${countLane(rows, "completed", now)} completed`}
+        style={{ fg: "#94A3B8" }}
       />
     </box>
   )
@@ -303,15 +326,44 @@ export function ProjectTabs({ tabs, activeIndex, width }: { tabs: ProjectTab[]; 
   )
 }
 
+export function SearchInput({ value, focused, width, onInput }: SearchInputProps) {
+  const inputRef = useRef<InputRenderable>(null)
+  const inputWidth = Math.min(44, Math.max(16, width - 8))
+
+  return (
+    <box style={{ flexDirection: "row" }}>
+      <box
+        style={{
+          border: true,
+          borderColor: focused ? "#38BDF8" : value ? "#475569" : "#1E293B",
+          height: 3,
+          paddingLeft: 1,
+          paddingRight: 1,
+          width: inputWidth,
+        }}
+      >
+        <input
+          ref={inputRef}
+          value={value}
+          focused={focused}
+          placeholder="Search sessions"
+          style={{ width: inputWidth - 4 }}
+          onInput={(nextValue) => onInput(nextValue)}
+        />
+      </box>
+    </box>
+  )
+}
+
 function tableLayout(width: number) {
-  const gap = 2
+  const gap = 4
   const ageWidth = 6
   const contextWidth = 13
   const availableWidth = Math.max(4, width - 2 - gap * 4)
   const variableWidth = Math.max(3, availableWidth - ageWidth - contextWidth)
   const titleWidth = Math.min(56, Math.max(8, Math.floor(variableWidth * 0.5)))
-  const messageWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.4)))
-  const worktreeWidth = Math.max(3, variableWidth - titleWidth - messageWidth)
+  const worktreeWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.4)))
+  const messageWidth = Math.max(3, variableWidth - titleWidth - worktreeWidth)
   return { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap: " ".repeat(gap) }
 }
 
@@ -443,10 +495,11 @@ export function PromptDialog({
   const textareaRef = useRef<TextareaRenderable>(null)
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
+  const previewHeight = 4
   const messageLines = state.loadingPreview
     ? [{ key: "loading", text: "Loading previous agent message..." }]
-    : wrapText(state.row.latestMessage, dialogWidth - 4, 4)
-  const dialogHeight = 8 + inputHeight + messageLines.length + (state.error ? 1 : 0)
+    : wrapText(state.row.latestMessage, dialogWidth - 6, previewHeight)
+  const dialogHeight = 10 + inputHeight + previewHeight + (state.error ? 1 : 0)
 
   return (
     <box
@@ -464,7 +517,17 @@ export function PromptDialog({
         padding: 1,
       }}
     >
-      <box style={{ flexDirection: "column", marginBottom: 1 }}>
+      <text content="Previous message" style={{ fg: "#CBD5E1", attributes: TextAttributes.BOLD }} />
+      <box
+        style={{
+          flexDirection: "column",
+          height: previewHeight,
+          marginBottom: 1,
+          marginTop: 1,
+          paddingLeft: 1,
+          paddingRight: 1,
+        }}
+      >
         {messageLines.map((line) => (
           <text key={line.key} content={line.text} style={{ fg: "#94A3B8" }} />
         ))}

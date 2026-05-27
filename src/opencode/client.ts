@@ -1,5 +1,6 @@
 import {
   createOpencodeClient,
+  type AssistantMessage,
   type Part,
   type Provider,
   type SessionMessage,
@@ -99,12 +100,18 @@ export async function loadContextUsage(input: {
   ])
 
   const latestAssistant = latestAssistantMessage(context.data)
-  const tokens = latestAssistant ? contextTokens(latestAssistant) : undefined
-  const model = latestAssistant
-    ? providers.data.providers.find((provider: Provider) => provider.id === latestAssistant.model.providerID)?.models[
-        latestAssistant.model.id
-      ]
-    : undefined
+  const fallbackAssistant = latestAssistant ? undefined : await loadLatestAssistantMessage(input)
+  const tokens = latestAssistant
+    ? contextTokens(latestAssistant)
+    : fallbackAssistant
+      ? historyTokens(fallbackAssistant)
+      : undefined
+  const providerID = latestAssistant?.model.providerID ?? fallbackAssistant?.providerID
+  const modelID = latestAssistant?.model.id ?? fallbackAssistant?.modelID
+  const model =
+    providerID && modelID
+      ? providers.data.providers.find((provider: Provider) => provider.id === providerID)?.models[modelID]
+      : undefined
   const limit = model?.limit.context
   return {
     tokens,
@@ -112,16 +119,33 @@ export async function loadContextUsage(input: {
   }
 }
 
+async function loadLatestAssistantMessage(input: {
+  sessionID: string
+  directory?: string
+  workspaceID?: string
+  serverUrl?: string
+}): Promise<AssistantMessage | undefined> {
+  const client = createPersistenceClient({ serverUrl: input.serverUrl })
+  const result = await client.session.messages(
+    {
+      sessionID: input.sessionID,
+      directory: input.directory,
+      workspace: input.workspaceID,
+      limit: 20,
+    },
+    { throwOnError: true },
+  )
+
+  return latestHistoryAssistantMessage(result.data)
+}
+
 function extractLatestText(messages: SessionMessagesResponse): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
-    if (!message) continue
+    if (!message || message.info.role !== "assistant") continue
 
     const text = textParts(message.parts)
     if (text) return text
-
-    const tool = [...message.parts].reverse().find((part) => part.type === "tool")
-    if (tool) return `${tool.tool} ${tool.state.status}`
   }
   return ""
 }
@@ -136,9 +160,25 @@ function latestAssistantMessage(
   return undefined
 }
 
+function latestHistoryAssistantMessage(messages: SessionMessagesResponse): AssistantMessage | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.info.role === "assistant" && hasContextTokens(message.info)) return message.info
+  }
+  return undefined
+}
+
 function contextTokens(message: Extract<SessionMessage, { type: "assistant" }>): number | undefined {
   if (!message.tokens) return undefined
   return message.tokens.input + message.tokens.cache.read + message.tokens.cache.write
+}
+
+function historyTokens(message: AssistantMessage): number {
+  return message.tokens.input + message.tokens.cache.read + message.tokens.cache.write
+}
+
+function hasContextTokens(message: AssistantMessage): boolean {
+  return historyTokens(message) > 0
 }
 
 function textParts(parts: Part[]): string {
