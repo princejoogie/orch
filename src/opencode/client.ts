@@ -1,4 +1,10 @@
-import { createOpencodeClient, type Part, type SessionMessagesResponse } from "@opencode-ai/sdk/v2"
+import {
+  createOpencodeClient,
+  type Part,
+  type Provider,
+  type SessionMessage,
+  type SessionMessagesResponse,
+} from "@opencode-ai/sdk/v2"
 
 export const DEFAULT_LIMIT = 300
 export const DEFAULT_OPENCODE_SERVER_URL = "http://localhost:4096"
@@ -73,6 +79,39 @@ export async function loadLatestMessage(input: {
   return extractLatestText(result.data)
 }
 
+export async function loadContextUsage(input: {
+  sessionID: string
+  directory?: string
+  workspaceID?: string
+  serverUrl?: string
+}): Promise<{ tokens?: number; percent?: number }> {
+  const client = createPersistenceClient({ serverUrl: input.serverUrl })
+  const [context, providers] = await Promise.all([
+    client.v2.session.context(
+      {
+        sessionID: input.sessionID,
+        directory: input.directory,
+        workspace: input.workspaceID,
+      },
+      { throwOnError: true },
+    ),
+    client.config.providers({ directory: input.directory, workspace: input.workspaceID }, { throwOnError: true }),
+  ])
+
+  const latestAssistant = latestAssistantMessage(context.data)
+  const tokens = latestAssistant ? contextTokens(latestAssistant) : undefined
+  const model = latestAssistant
+    ? providers.data.providers.find((provider: Provider) => provider.id === latestAssistant.model.providerID)?.models[
+        latestAssistant.model.id
+      ]
+    : undefined
+  const limit = model?.limit.context
+  return {
+    tokens,
+    percent: tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined,
+  }
+}
+
 function extractLatestText(messages: SessionMessagesResponse): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -85,6 +124,21 @@ function extractLatestText(messages: SessionMessagesResponse): string {
     if (tool) return `${tool.tool} ${tool.state.status}`
   }
   return ""
+}
+
+function latestAssistantMessage(
+  messages: SessionMessage[],
+): Extract<SessionMessage, { type: "assistant" }> | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.type === "assistant") return message
+  }
+  return undefined
+}
+
+function contextTokens(message: Extract<SessionMessage, { type: "assistant" }>): number | undefined {
+  if (!message.tokens) return undefined
+  return message.tokens.input + message.tokens.cache.read + message.tokens.cache.write
 }
 
 function textParts(parts: Part[]): string {

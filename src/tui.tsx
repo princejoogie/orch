@@ -2,8 +2,16 @@ import { createCliRenderer, type ScrollBoxRenderable } from "@opentui/core"
 import { createRoot, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState } from "react"
-import { discoverOpencode, loadLatestMessage, sendPrompt, type SessionRow } from "./opencode.ts"
 import {
+  createSessionWithPrompt,
+  discoverOpencode,
+  loadContextUsage,
+  loadLatestMessage,
+  sendPrompt,
+  type SessionRow,
+} from "./opencode.ts"
+import {
+  AddSessionDialog,
   Header,
   PromptDialog,
   ProjectTabs,
@@ -17,7 +25,9 @@ import {
   rowInLane,
   sectionElementId,
   selectedRow,
+  worktreeOptions,
   clamp,
+  type AddSessionDialogState,
   type PromptDialogState,
   type Selection,
 } from "./utils.tsx"
@@ -33,14 +43,21 @@ function App() {
   const dimensions = useTerminalDimensions()
   const listRef = useRef<ScrollBoxRenderable>(null)
   const pendingLatestMessages = useRef(new Set<string>())
+  const pendingContextUsage = useRef(new Set<string>())
   const [now, setNow] = useState(() => new Date())
   const [activeTabIndex, setActiveTabIndex] = useState(0)
   const [selection, setSelection] = useState<Selection>({ section: "working", index: 0 })
   const [promptDialog, setPromptDialog] = useState<PromptDialogState | undefined>()
+  const [addSessionDialog, setAddSessionDialog] = useState<AddSessionDialogState | undefined>()
   const [latestMessages, setLatestMessages] = useState<Record<string, { updated: number; text: string }>>({})
+  const [contextUsage, setContextUsage] = useState<
+    Record<string, { updated: number; tokens?: number; percent?: number }>
+  >({})
   const query = useQuery({
     queryKey: ["opencode-sessions"],
     queryFn: () => discoverOpencode(),
+    refetchInterval: POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
   })
 
   const snapshot = query.data
@@ -51,19 +68,19 @@ function App() {
   const rowsBySection = useMemo(
     () => ({
       working: withLatestMessages(
-        activeTab?.rows.filter((row) => rowInLane(row, "working", now)) ?? [],
+        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "working", now)) ?? [], contextUsage),
         latestMessages,
       ),
       "needs-input": withLatestMessages(
-        activeTab?.rows.filter((row) => rowInLane(row, "needs-input", now)) ?? [],
+        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "needs-input", now)) ?? [], contextUsage),
         latestMessages,
       ),
       completed: withLatestMessages(
-        activeTab?.rows.filter((row) => rowInLane(row, "completed", now)) ?? [],
+        withContextUsage(activeTab?.rows.filter((row) => rowInLane(row, "completed", now)) ?? [], contextUsage),
         latestMessages,
       ),
     }),
-    [activeTab?.rows, latestMessages, now],
+    [activeTab?.rows, contextUsage, latestMessages, now],
   )
   const activeSection = selection.section
   const currentRow = selectedRow(selection, rowsBySection)
@@ -72,14 +89,9 @@ function App() {
   const completedCount = rowsBySection.completed.length
 
   useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 1000)
+    const interval = setInterval(() => setNow(new Date()), 80)
     return () => clearInterval(interval)
   }, [])
-
-  useEffect(() => {
-    const interval = setInterval(() => void query.refetch(), POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [query])
 
   useEffect(() => {
     setActiveTabIndex((current) => clamp(current, 0, Math.max(0, tabs.length - 1)))
@@ -105,6 +117,27 @@ function App() {
         })
     }
   }, [activeTab, latestMessages])
+
+  useEffect(() => {
+    if (!activeTab) return
+    for (const row of activeTab.rows) {
+      const key = `${row.id}:${row.updated}`
+      if (contextUsage[row.id]?.updated === row.updated) continue
+      if (pendingContextUsage.current.has(key)) continue
+
+      pendingContextUsage.current.add(key)
+      void loadContextUsage({ sessionID: row.id, directory: row.directory, workspaceID: row.workspaceID })
+        .then((usage) => {
+          setContextUsage((current) => ({ ...current, [row.id]: { updated: row.updated, ...usage } }))
+        })
+        .catch(() => {
+          setContextUsage((current) => ({ ...current, [row.id]: { updated: row.updated } }))
+        })
+        .finally(() => {
+          pendingContextUsage.current.delete(key)
+        })
+    }
+  }, [activeTab, contextUsage])
 
   useEffect(() => {
     const lengths = {
@@ -135,6 +168,24 @@ function App() {
       renderer.destroy()
       return
     }
+    if (addSessionDialog) {
+      if (key.name === "escape") {
+        setAddSessionDialog(undefined)
+        return
+      }
+      if (addSessionDialog.worktrees.length > 1 && key.name === "tab") {
+        setAddSessionDialog((current) =>
+          current
+            ? {
+                ...current,
+                worktreeIndex: nextIndex(current.worktreeIndex, key.shift ? -1 : 1, current.worktrees.length),
+              }
+            : current,
+        )
+        return
+      }
+      return
+    }
     if (promptDialog) {
       if (key.name === "escape") setPromptDialog(undefined)
       return
@@ -145,6 +196,10 @@ function App() {
     }
     if (key.name === "r") {
       void query.refetch()
+      return
+    }
+    if (key.name === "a") {
+      openAddSessionDialog()
       return
     }
     if (key.name === "return" || key.name === "enter") {
@@ -169,6 +224,13 @@ function App() {
     }
     if (key.name === "`") renderer.console.toggle()
   })
+
+  function openAddSessionDialog() {
+    if (!activeTab) return
+    const worktrees = worktreeOptions(activeTab)
+    if (worktrees.length === 0) return
+    setAddSessionDialog({ projectTitle: activeTab.title, worktrees, worktreeIndex: 0, value: "", sending: false })
+  }
 
   function openPromptDialog(row: NonNullable<typeof currentRow>) {
     setPromptDialog({ row, value: "", sending: false, loadingPreview: true })
@@ -212,13 +274,42 @@ function App() {
     }
   }
 
+  async function submitAddSession(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed || !addSessionDialog || addSessionDialog.sending) return
+
+    const worktree = addSessionDialog.worktrees[addSessionDialog.worktreeIndex]
+    if (!worktree) return
+
+    setAddSessionDialog((current) => (current ? { ...current, sending: true, error: undefined } : current))
+    try {
+      await createSessionWithPrompt({
+        directory: worktree.directory,
+        workspaceID: worktree.workspaceID,
+        text: trimmed,
+      })
+      setAddSessionDialog(undefined)
+      await query.refetch()
+    } catch (createError) {
+      setAddSessionDialog((current) =>
+        current
+          ? {
+              ...current,
+              sending: false,
+              error: createError instanceof Error ? createError.message : String(createError),
+            }
+          : current,
+      )
+    }
+  }
+
   return (
     <box
       style={{
         width: dimensions.width,
         height: dimensions.height,
         flexDirection: "column",
-        backgroundColor: "#071018",
+        backgroundColor: "#000000",
         padding: 1,
       }}
     >
@@ -263,10 +354,21 @@ function App() {
       </scrollbox>
       <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
         <text
-          content="enter prompt · tab/shift-tab project · j/k move · r refresh · q quit"
+          content="enter prompt · a new session · tab/shift-tab project · j/k move · r refresh · q quit"
           style={{ fg: "#64748B" }}
         />
       </box>
+      {addSessionDialog ? (
+        <AddSessionDialog
+          state={addSessionDialog}
+          width={dimensions.width}
+          height={dimensions.height}
+          onInput={(value) =>
+            setAddSessionDialog((current) => (current ? { ...current, value, error: undefined } : current))
+          }
+          onSubmit={(value) => void submitAddSession(value)}
+        />
+      ) : null}
       {promptDialog ? (
         <PromptDialog
           state={promptDialog}
@@ -289,6 +391,17 @@ function withLatestMessages(
   return rows.map((row) => ({ ...row, latestMessage: latestMessages[row.id]?.text ?? row.latestMessage }))
 }
 
+function withContextUsage(
+  rows: SessionRow[],
+  contextUsage: Record<string, { updated: number; tokens?: number; percent?: number }>,
+): SessionRow[] {
+  return rows.map((row) => {
+    const usage = contextUsage[row.id]
+    if (!usage || usage.updated !== row.updated) return row
+    return { ...row, contextTokens: usage.tokens, contextPercent: usage.percent }
+  })
+}
+
 export async function runTui(_options: RunTuiOptions): Promise<void> {
   let resolveDone = () => {}
   const done = new Promise<void>((resolve) => {
@@ -304,7 +417,7 @@ export async function runTui(_options: RunTuiOptions): Promise<void> {
     onDestroy: resolveDone,
   })
 
-  renderer.setBackgroundColor("#071018")
+  renderer.setBackgroundColor("#000000")
   const queryClient = new QueryClient()
   createRoot(renderer).render(
     <QueryClientProvider client={queryClient}>

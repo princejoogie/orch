@@ -1,4 +1,5 @@
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type KeyBinding, type TextareaRenderable } from "@opentui/core"
+import { useRef } from "react"
 import { formatDirectory, type DashboardSnapshot, type SessionRow, type SessionStatus } from "./opencode.ts"
 
 export { formatDirectory }
@@ -15,6 +16,15 @@ const WORKTREE_COLORS = [
   "#FB923C",
   "#A3E635",
   "#F9A8D4",
+]
+const WORKING_MARKERS = [" ", ".", "o", "O", "@", "*", " "]
+const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
+  { name: "return", action: "submit" },
+  { name: "kpenter", action: "submit" },
+  { name: "linefeed", action: "submit" },
+  { name: "return", shift: true, action: "newline" },
+  { name: "kpenter", shift: true, action: "newline" },
+  { name: "linefeed", shift: true, action: "newline" },
 ]
 
 export type LaneStatus = SessionStatus | "needs-input"
@@ -200,7 +210,13 @@ export function groupRowsByProject(rows: SessionRow[]): ProjectTab[] {
       worktreeColors: {},
     })
   }
-  return [...tabs.values()].map((tab) => ({ ...tab, worktreeColors: assignWorktreeColors(tab.rows) }))
+  return [...tabs.values()]
+    .sort((left, right) => latestActivity(right.rows) - latestActivity(left.rows) || left.id.localeCompare(right.id))
+    .map((tab) => ({ ...tab, worktreeColors: assignWorktreeColors(tab.rows) }))
+}
+
+function latestActivity(rows: SessionRow[]): number {
+  return Math.max(...rows.map((row) => row.updated))
 }
 
 export function worktreeOptions(tab?: ProjectTab): WorktreeOption[] {
@@ -290,16 +306,17 @@ export function ProjectTabs({ tabs, activeIndex, width }: { tabs: ProjectTab[]; 
 function tableLayout(width: number) {
   const gap = 2
   const ageWidth = 6
-  const messageWidth = 34
-  const availableWidth = Math.max(4, width - 5 - gap * 3)
-  const flexibleWidth = Math.max(2, availableWidth - ageWidth - messageWidth)
-  const titleWidth = Math.max(1, Math.floor(flexibleWidth / 2))
-  const worktreeWidth = Math.max(1, flexibleWidth - titleWidth)
-  return { titleWidth, messageWidth, worktreeWidth, ageWidth, gap: " ".repeat(gap) }
+  const contextWidth = 13
+  const availableWidth = Math.max(4, width - 2 - gap * 4)
+  const variableWidth = Math.max(3, availableWidth - ageWidth - contextWidth)
+  const titleWidth = Math.min(56, Math.max(8, Math.floor(variableWidth * 0.5)))
+  const messageWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.4)))
+  const worktreeWidth = Math.max(3, variableWidth - titleWidth - messageWidth)
+  return { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap: " ".repeat(gap) }
 }
 
 export function TableHeader({ width }: { width: number }) {
-  const { titleWidth, messageWidth, worktreeWidth, ageWidth, gap } = tableLayout(width)
+  const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
 
   return (
     <box style={{ flexDirection: "row", marginBottom: 1 }}>
@@ -309,6 +326,8 @@ export function TableHeader({ width }: { width: number }) {
       <text content={"Latest".padEnd(messageWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
       <text content={gap} style={{ fg: "#64748B" }} />
       <text content={"Worktree".padEnd(worktreeWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
+      <text content={gap} style={{ fg: "#64748B" }} />
+      <text content={"Context".padStart(contextWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
       <text content={gap} style={{ fg: "#64748B" }} />
       <text content={"Age".padStart(ageWidth)} style={{ fg: "#64748B", attributes: TextAttributes.BOLD }} />
     </box>
@@ -332,7 +351,7 @@ export function SectionView({
   now: Date
   width: number
 }) {
-  const { titleWidth, messageWidth, worktreeWidth, ageWidth, gap } = tableLayout(width)
+  const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
 
   return (
     <box style={{ flexDirection: "column", marginBottom: 1 }}>
@@ -352,7 +371,7 @@ export function SectionView({
             key={row.id}
             style={{ flexDirection: "row", backgroundColor: selected ? "#334155" : undefined }}
           >
-            <text content={`${section.marker} `} style={{ fg: sectionMarkerColor(section.status) }} />
+            <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
             <text
               content={truncate(row.title, titleWidth).padEnd(titleWidth)}
               style={{ fg: selected ? "#F8FAFC" : "#E2E8F0", attributes: selected ? TextAttributes.BOLD : undefined }}
@@ -370,6 +389,11 @@ export function SectionView({
             />
             <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
             <text
+              content={formatContextUsage(row).padStart(contextWidth)}
+              style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }}
+            />
+            <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+            <text
               content={formatAge(row.updated, now).padStart(ageWidth)}
               style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }}
             />
@@ -380,10 +404,27 @@ export function SectionView({
   )
 }
 
+function formatContextUsage(row: SessionRow): string {
+  if (row.contextTokens === undefined) return "-"
+  const tokens = formatTokenCount(row.contextTokens)
+  return row.contextPercent === undefined ? tokens : `${tokens} (${row.contextPercent}%)`
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}K`
+  return String(tokens)
+}
+
 function sectionMarkerColor(status: LaneStatus): string {
   if (status === "working") return "#FBBF24"
   if (status === "needs-input") return "#38BDF8"
   return "#86EFAC"
+}
+
+function sectionMarker(section: Section, now: Date): string {
+  if (section.status !== "working") return section.marker
+  return WORKING_MARKERS[Math.floor(now.getTime() / 80) % WORKING_MARKERS.length]!
 }
 
 export function PromptDialog({
@@ -399,11 +440,85 @@ export function PromptDialog({
   onInput: (value: string) => void
   onSubmit: (value: string) => void
 }) {
-  const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), width - 4)
+  const textareaRef = useRef<TextareaRenderable>(null)
+  const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
+  const inputHeight = 5
   const messageLines = state.loadingPreview
     ? [{ key: "loading", text: "Loading previous agent message..." }]
     : wrapText(state.row.latestMessage, dialogWidth - 4, 4)
-  const dialogHeight = 11 + messageLines.length + (state.error ? 1 : 0)
+  const dialogHeight = 8 + inputHeight + messageLines.length + (state.error ? 1 : 0)
+
+  return (
+    <box
+      style={{
+        position: "absolute",
+        zIndex: 20,
+        left: Math.max(1, Math.floor((width - dialogWidth) / 2)),
+        top: Math.max(1, Math.floor((height - dialogHeight) / 2)),
+        width: dialogWidth,
+        height: dialogHeight,
+        border: true,
+        borderColor: state.error ? "#F87171" : "#38BDF8",
+        backgroundColor: "#0F172A",
+        flexDirection: "column",
+        padding: 1,
+      }}
+    >
+      <box style={{ flexDirection: "column", marginBottom: 1 }}>
+        {messageLines.map((line) => (
+          <text key={line.key} content={line.text} style={{ fg: "#94A3B8" }} />
+        ))}
+      </box>
+      <box
+        style={{
+          height: inputHeight + 2,
+          border: true,
+          borderColor: "#334155",
+          paddingLeft: 1,
+          paddingRight: 1,
+          marginBottom: 1,
+        }}
+      >
+        <textarea
+          ref={textareaRef}
+          placeholder={state.sending ? "Sending..." : "Type prompt"}
+          initialValue={state.value}
+          focused={!state.sending}
+          style={{ width: "100%", height: inputHeight, wrapMode: "word" }}
+          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+          onContentChange={() => onInput(textareaRef.current?.plainText ?? state.value)}
+          onSubmit={() => onSubmit(textareaRef.current?.plainText ?? state.value)}
+        />
+      </box>
+      {state.error ? <text content={truncate(state.error, dialogWidth - 4)} style={{ fg: "#F87171" }} /> : null}
+      <text content="Enter send · Shift-Enter newline · Esc cancel" style={{ fg: "#64748B" }} />
+    </box>
+  )
+}
+
+export function AddSessionDialog({
+  state,
+  width,
+  height,
+  onInput,
+  onSubmit,
+}: {
+  state: AddSessionDialogState
+  width: number
+  height: number
+  onInput: (value: string) => void
+  onSubmit: (value: string) => void
+}) {
+  const textareaRef = useRef<TextareaRenderable>(null)
+  const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
+  const inputHeight = 5
+  const worktreeLines = Math.min(state.worktrees.length, 6)
+  const worktreeStart = clamp(
+    state.worktreeIndex - worktreeLines + 1,
+    0,
+    Math.max(0, state.worktrees.length - worktreeLines),
+  )
+  const dialogHeight = Math.max(1, Math.min(height - 2, 13 + inputHeight + worktreeLines + (state.error ? 1 : 0)))
 
   return (
     <box
@@ -422,68 +537,13 @@ export function PromptDialog({
       }}
     >
       <text
-        content={`Send to ${truncate(state.row.title, dialogWidth - 10)}`}
+        content={`New session in ${truncate(state.projectTitle, dialogWidth - 18)}`}
         style={{ fg: "#F8FAFC", attributes: TextAttributes.BOLD }}
       />
-      <text content={formatDirectory(state.row.directory)} style={{ fg: "#94A3B8", marginBottom: 1 }} />
-      <text content="Latest message" style={{ fg: "#CBD5E1", attributes: TextAttributes.BOLD }} />
-      <box style={{ flexDirection: "column", marginBottom: 1 }}>
-        {messageLines.map((line) => (
-          <text key={line.key} content={line.text} style={{ fg: "#94A3B8" }} />
-        ))}
-      </box>
-      <box style={{ height: 3, border: true, borderColor: "#334155", paddingLeft: 1, paddingRight: 1 }}>
-        <input
-          placeholder={state.sending ? "Sending..." : "Type prompt and press Enter"}
-          value={state.value}
-          focused={!state.sending}
-          onInput={onInput}
-          onSubmit={() => onSubmit(state.value)}
-        />
-      </box>
-      {state.error ? <text content={truncate(state.error, dialogWidth - 4)} style={{ fg: "#F87171" }} /> : null}
-      <text content="Esc cancel" style={{ fg: "#64748B" }} />
-    </box>
-  )
-}
-
-export function AddSessionDialog({
-  state,
-  width,
-  height,
-  onInput,
-  onSubmit,
-}: {
-  state: AddSessionDialogState
-  width: number
-  height: number
-  onInput: (value: string) => void
-  onSubmit: (value: string) => void
-}) {
-  const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), width - 4)
-  const worktreeLines = Math.min(state.worktrees.length, 6)
-  const dialogHeight = 9 + worktreeLines + (state.error ? 1 : 0)
-
-  return (
-    <box
-      style={{
-        position: "absolute",
-        zIndex: 20,
-        left: Math.max(1, Math.floor((width - dialogWidth) / 2)),
-        top: Math.max(1, Math.floor((height - dialogHeight) / 2)),
-        width: dialogWidth,
-        height: dialogHeight,
-        border: true,
-        borderColor: state.error ? "#F87171" : "#38BDF8",
-        backgroundColor: "#0F172A",
-        flexDirection: "column",
-        padding: 1,
-      }}
-    >
-      <text content={`New session in ${truncate(state.projectTitle, dialogWidth - 18)}`} style={{ fg: "#F8FAFC", attributes: TextAttributes.BOLD }} />
       <text content="Worktree" style={{ fg: "#CBD5E1", attributes: TextAttributes.BOLD, marginTop: 1 }} />
-      <box style={{ flexDirection: "column", marginBottom: 1 }}>
-        {state.worktrees.slice(0, worktreeLines).map((worktree, index) => {
+      <box style={{ flexDirection: "column", height: worktreeLines, marginBottom: 1 }}>
+        {state.worktrees.slice(worktreeStart, worktreeStart + worktreeLines).map((worktree, offset) => {
+          const index = worktreeStart + offset
           const selected = index === state.worktreeIndex
           return (
             <text
@@ -494,17 +554,29 @@ export function AddSessionDialog({
           )
         })}
       </box>
-      <box style={{ height: 3, border: true, borderColor: "#334155", paddingLeft: 1, paddingRight: 1 }}>
-        <input
-          placeholder={state.sending ? "Creating..." : "Type first prompt and press Enter"}
-          value={state.value}
+      <box
+        style={{
+          height: inputHeight + 2,
+          border: true,
+          borderColor: "#334155",
+          paddingLeft: 1,
+          paddingRight: 1,
+          marginBottom: 1,
+        }}
+      >
+        <textarea
+          ref={textareaRef}
+          placeholder={state.sending ? "Creating..." : "Type first prompt"}
+          initialValue={state.value}
           focused={!state.sending}
-          onInput={onInput}
-          onSubmit={() => onSubmit(state.value)}
+          style={{ width: "100%", height: inputHeight, wrapMode: "word" }}
+          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+          onContentChange={() => onInput(textareaRef.current?.plainText ?? state.value)}
+          onSubmit={() => onSubmit(textareaRef.current?.plainText ?? state.value)}
         />
       </box>
       {state.error ? <text content={truncate(state.error, dialogWidth - 4)} style={{ fg: "#F87171" }} /> : null}
-      <text content="j/k select worktree · Esc cancel" style={{ fg: "#64748B" }} />
+      <text content="Tab select worktree · Enter create · Shift-Enter newline · Esc cancel" style={{ fg: "#64748B" }} />
     </box>
   )
 }
