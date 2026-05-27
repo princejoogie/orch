@@ -35,7 +35,9 @@ export function PromptDialog({
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
   const previewHeight = 3
-  const bodyHeight = 2 + previewHeight * 2 + inputHeight + 2 + (state.error ? 1 : 0)
+  const previewBlockHeight = previewHeight + 2
+  const inputBlockHeight = inputHeight + 3
+  const bodyHeight = 2 + previewBlockHeight * 2 + inputBlockHeight + (state.error ? 1 : 0)
   const userLines = state.loadingPreview
     ? [{ key: "loading", text: "Loading user message..." }]
     : wrapText(state.latestUserMessage ?? "", dialogWidth - 6, previewHeight, "No previous user message.")
@@ -99,13 +101,14 @@ export function AddSessionDialog({
 }) {
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
+  const inputBlockHeight = inputHeight + 3
   const worktreeLines = Math.min(state.worktrees.length, 6)
   const worktreeStart = clamp(
     state.worktreeIndex - worktreeLines + 1,
     0,
     Math.max(0, state.worktrees.length - worktreeLines),
   )
-  const bodyHeight = 1 + worktreeLines + inputHeight + 2 + (state.error ? 1 : 0)
+  const bodyHeight = 1 + worktreeLines + inputBlockHeight + (state.error ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 7))
 
   return (

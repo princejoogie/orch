@@ -77,10 +77,12 @@ describe("keymap dispatcher", () => {
     const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
 
     expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
 
-    expect(moves).toEqual([1])
+    expect(moves).toEqual([1, 1, -1])
     expect(executed).toBe(true)
     expect(closed).toBe(true)
   })

@@ -49,7 +49,7 @@ This keeps the style consistent with the shortcuts dialog and future command pal
 ## Shortcut Dialog
 
 Shortcut metadata lives next to the shortcut UI in `src/components/shortcuts-dialog.tsx`.
-The dialog is selectable: up/down keys cycle through commands, and enter runs the selected command through the dashboard keymap context.
+The dialog is selectable: up/down or tab keys cycle through commands, and enter runs the selected command through the dashboard keymap context.
 
 When adding a user-facing shortcut:
 

@@ -107,7 +107,7 @@ export function ShortcutsDialog({
         <HintRow
           items={[
             { key: "?", label: "close" },
-            { key: "↑↓", label: "select" },
+            { key: "up/down", label: "select" },
             { key: "enter", label: "run" },
             { key: "esc", label: "close" },
           ]}

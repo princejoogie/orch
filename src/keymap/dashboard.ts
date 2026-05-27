@@ -82,14 +82,14 @@ const helpDialogKeymap = HelpDialog(
   {
     id: "help.previous",
     title: "Previous help command",
-    keys: ["k", "up", "ctrl+p"],
+    keys: ["k", "up", "ctrl+p", "shift+tab"],
     enabled: (ctx) => ctx.commandCount > 1 || "Only one command.",
     run: (ctx) => ctx.moveSelection(-1),
   },
   {
     id: "help.next",
     title: "Next help command",
-    keys: ["j", "down", "ctrl+n"],
+    keys: ["j", "down", "ctrl+n", "tab"],
     enabled: (ctx) => ctx.commandCount > 1 || "Only one command.",
     run: (ctx) => ctx.moveSelection(1),
   },

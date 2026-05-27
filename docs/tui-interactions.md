@@ -37,7 +37,7 @@ OpenTUI focus can trigger built-in widget behavior. That matters for scrollboxes
 
 Mouse support should mirror keyboard selection, not create a second state model.
 
-- Rows support hover and click-to-select.
+- Rows support hover, click-to-select, and double-click to prompt the selected session.
 - Project tabs support hover and click-to-select.
 - Dialog options support click selection where useful.
 - Click handlers that perform actions should prevent default focus changes and stop propagation.

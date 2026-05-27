@@ -20,8 +20,8 @@ function tableLayout(width: number) {
   const contextWidth = 13
   const availableWidth = Math.max(4, width - 2 - gap * 4)
   const variableWidth = Math.max(3, availableWidth - ageWidth - contextWidth)
-  const titleWidth = Math.min(56, Math.max(8, Math.floor(variableWidth * 0.5)))
-  const worktreeWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.4)))
+  const titleWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.38)))
+  const worktreeWidth = Math.min(28, Math.max(8, Math.floor(variableWidth * 0.22)))
   const messageWidth = Math.max(3, variableWidth - titleWidth - worktreeWidth)
   return { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap: " ".repeat(gap) }
 }
@@ -61,6 +61,7 @@ export function SectionView({
   hoveredRowId,
   onRowHover,
   onRowSelect,
+  onRowClick,
 }: {
   section: Section
   rows: SessionRow[]
@@ -71,6 +72,7 @@ export function SectionView({
   hoveredRowId?: string | undefined
   onRowHover: (rowId: string | undefined) => void
   onRowSelect: (selection: Selection) => void
+  onRowClick: (row: SessionRow) => void
 }) {
   return (
     <box style={{ flexDirection: "column", marginBottom: 1, width }}>
@@ -96,6 +98,7 @@ export function SectionView({
           width={width}
           onHover={(hovered) => onRowHover(hovered ? row.id : undefined)}
           onSelect={() => onRowSelect({ section: section.status, index })}
+          onClick={() => onRowClick(row)}
         />
       ))}
     </box>
@@ -111,6 +114,7 @@ function SessionItem({
   width,
   onHover,
   onSelect,
+  onClick,
 }: {
   row: SessionRow
   section: Section
@@ -120,6 +124,7 @@ function SessionItem({
   width: number
   onHover: (hovered: boolean) => void
   onSelect: () => void
+  onClick: () => void
 }) {
   const now = useNow(80)
   const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
@@ -140,6 +145,7 @@ function SessionItem({
         event.preventDefault()
         event.stopPropagation()
         onSelect()
+        onClick()
       }}
       onMouseOver={() => onHover(true)}
       onMouseOut={() => onHover(false)}

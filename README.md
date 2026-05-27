@@ -1,31 +1,54 @@
 # orch
 
-Terminal orchestrator for [opencode](https://opencode.ai/) with native git worktree and tmux support.
+Terminal orchestrator for [opencode](https://opencode.ai/) sessions across projects and git worktrees.
+
+`orch` gives you one keyboard-driven place to watch active opencode sessions, spot sessions that need input, prompt or create sessions, delete stale sessions, and jump back into the right tmux workspace without leaving the terminal.
 
 <img width="2556" height="1371" alt="image" src="https://github.com/user-attachments/assets/8e03f0f6-8c81-4205-91a3-62557e8c6d8e" />
 
-`orch` connects to an opencode persistence server, shows recent unarchived sessions, groups them by project, and lets you jump back into the right tmux workspace. It is built with Bun, React 19, and OpenTUI.
+## Install
 
-## Features
+`orch` is currently a private/source-first CLI. Clone, install, and run with Bun:
 
-- Live terminal UI for active opencode sessions, refreshed every 2 seconds.
-- Project tabs with per-worktree session rows.
-- Lanes for `Working`, `Needs input`, and `Completed` sessions.
-- Latest assistant-message preview and context-window usage per session.
-- Fuzzy search across session titles and worktree names.
-- Prompt an existing session or create a new session from the dashboard.
-- Delete sessions with confirmation.
-- Open the selected project/worktree in tmux, reusing matching sessions when possible.
+```bash
+git clone https://github.com/princejoogie/orch.git
+cd orch
+bun install
+bun run dev
+```
 
-## Requirements
+Build a standalone executable for your current platform:
 
-- [Bun](https://bun.sh/) 1.3 or newer.
+```bash
+bun run build
+./dist/orch
+```
+
+The host build output is `dist/orch` on macOS/Linux and `dist/orch.exe` on Windows.
+
+Build release archives and checksums:
+
+```bash
+bun run build:standalone
+```
+
+Release assets are written to `dist/release/` as `orch-<target>.tar.gz` plus `.sha256` files. Supported targets are `darwin-arm64`, `darwin-x64`, `linux-arm64`, and `linux-x64`.
+
+Requirements:
+
+- Bun 1.3 or newer for source/development usage.
 - A running opencode persistence server. By default, `orch` connects to `http://localhost:4096`.
-- `tmux` for the `o` shortcut that opens the selected worktree.
+- `tmux` for opening selected worktrees from the dashboard.
 
-## Installation
+Run it from the repo or built binary:
 
-Clone the repo and install dependencies:
+```bash
+orch
+```
+
+## Local Development
+
+Clone and install:
 
 ```bash
 git clone https://github.com/princejoogie/orch.git
@@ -33,30 +56,38 @@ cd orch
 bun install
 ```
 
-Run from source:
+With Nix flakes:
 
 ```bash
+nix develop
+bun install
 bun run dev
 ```
 
-Build a standalone Bun executable for your current platform:
+Common checks:
 
 ```bash
-bun run build
-./dist/orch
+bun run check
+bun run typecheck
+bun run lint
+bun run test
+bun run package:smoke
 ```
 
-The build output is `dist/orch` on macOS/Linux and `dist/orch.exe` on Windows.
+`bun run check` runs formatting, typechecking, linting, tests, and package smoke validation.
 
-## Usage
-
-Start the dashboard:
+Benchmark opencode snapshot polling:
 
 ```bash
-orch
+bun run bench:opencode
+bun run bench:opencode -- --iterations=50 --limit=300 --server=http://localhost:4096
 ```
 
-If your opencode server is not running on the default port, set `OPENCODE_SERVER_URL`:
+## Configuration
+
+- `OPENCODE_SERVER_URL`: opencode persistence server URL, defaults to `http://localhost:4096`.
+
+Example:
 
 ```bash
 OPENCODE_SERVER_URL=http://localhost:4096 orch
@@ -71,57 +102,70 @@ orch --version
 
 ## Keybindings
 
-| Key | Action |
-| --- | --- |
-| `j`, `Down` | Move selection down |
-| `k`, `Up` | Move selection up |
-| `g`, `g` | Jump to top |
-| `G` | Jump to bottom |
-| `Tab` | Next project tab |
-| `Shift+Tab` | Previous project tab |
-| `/` | Focus search |
-| `Enter` | Prompt the selected session |
-| `a` | Create a new session in the active project |
-| `o` | Open the selected worktree in tmux |
-| `d` | Delete the selected session |
-| `r` | Refresh sessions |
-| `` ` `` | Toggle the OpenTUI console |
-| `q`, `Esc`, `Ctrl+C` | Quit |
+- `up` / `down`: move selection
+- `k` / `j`: move selection
+- `ctrl-p` / `ctrl-n`: move selection
+- `ctrl-u` / `ctrl-d`: half page up or down
+- `gg` / `G`: jump to first or last session
+- `home` / `end`: jump to first or last session
+- `tab` / `shift-tab`: switch project tab
+- `1`-`9`: select project tab by index
+- `/`: focus search
+- `?`: open keyboard shortcut help
+- `enter`: prompt the selected session
+- `a`: create a new session in the active project
+- `d`: delete the selected session with confirmation
+- `o`: open selected worktree in tmux
+- `r`: refresh sessions
+- `` ` ``: toggle the OpenTUI console
+- `q` / `esc` / `ctrl-c`: quit or close the active layer
 
-Prompt dialogs submit with `Enter`; use `Shift+Enter` for a newline.
+Prompt dialogs:
+
+- `enter`: send prompt
+- `ctrl-s`: send prompt
+- `shift-enter`: insert newline
+- `esc`: cancel
 
 ## How It Works
 
-`orch` talks to opencode through `@opencode-ai/sdk`. It lists recent unarchived global sessions from the last 24 hours, loads session statuses, and enriches visible rows with latest messages and context usage.
+`orch` talks to opencode through `@opencode-ai/sdk`. It lists recent unarchived global sessions from the last 24 hours, loads session statuses, and enriches rows with latest messages and context usage.
+
+Sessions are grouped into project tabs and lanes:
+
+- `Working`
+- `Needs input`
+- `Completed`
 
 When opening a session in tmux, `orch` derives a session name from the project or git worktree, reuses an existing tmux session when it can, and focuses an existing `opencode` pane if one is already running.
 
-## Development
+## Conventions
 
-Common commands:
+Project conventions live in `docs/`:
+
+- `docs/engineering-practices.md`
+- `docs/code-organization.md`
+- `docs/tui-interactions.md`
+- `docs/keymaps.md`
+- `docs/scrolling.md`
+- `docs/dialogs.md`
+- `docs/repo-workflows.md`
+
+Agents should also read `AGENTS.md` before making changes.
+
+## Releases
+
+Release automation lives in `.github/workflows/publish.yml`. The workflow runs on GitHub Release publication, verifies that the tag matches `package.json`, builds standalone binaries for each release target, and uploads archives plus checksums.
+
+Changesets are configured for release notes and version bumps:
 
 ```bash
-bun run dev
-bun run typecheck
-bun run lint
-bun run format:check
-bun run build
+bun run changeset
+bun run changeset:status
+bun run changeset:version
 ```
 
-Benchmark opencode snapshot polling:
-
-```bash
-bun run bench:opencode
-bun run bench:opencode -- --iterations=50 --limit=300 --server=http://localhost:4096
-```
-
-## Project Structure
-
-- `src/index.ts` - CLI entry point and flags.
-- `src/tui.tsx` - OpenTUI React application and keyboard workflow.
-- `src/opencode/` - opencode SDK client, session discovery, and row shaping.
-- `src/tmux.ts` - tmux session discovery, creation, attach, and pane focusing.
-- `scripts/build.ts` - Bun executable build script.
+`orch` is currently private, so release assets are the primary distribution path.
 
 ## License
 

@@ -41,12 +41,14 @@ const SIDEBAR_BACKGROUND = theme.backgroundPanel
 const SIDEBAR_PADDING_X = 2
 const SIDEBAR_PADDING_Y = 1
 const SELECTION_SCROLL_EDGE_OFFSET = 3
+const DOUBLE_CLICK_MS = 500
 
 export function DashboardPage() {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
   const now = useNow(80)
   const listRef = useRef<ScrollBoxRenderable>(null)
+  const lastSessionClickRef = useRef<{ rowId: string; time: number } | null>(null)
   const [addSessionDialog, setAddSessionDialog] = useState<AddSessionDialogState>()
   const [promptDialog, setPromptDialog] = useState<PromptDialogState>()
   const [deleteDialog, setDeleteDialog] = useState<DeleteSessionDialogState>()
@@ -225,6 +227,19 @@ export function DashboardPage() {
   function openShortcutsDialog() {
     setSelectedShortcutIndex(0)
     setShortcutsDialogOpen(true)
+  }
+
+  function handleSessionRowClick(row: SessionRow) {
+    const time = Date.now()
+    const lastClick = lastSessionClickRef.current
+
+    if (lastClick?.rowId === row.id && time - lastClick.time <= DOUBLE_CLICK_MS) {
+      lastSessionClickRef.current = null
+      openPromptDialog(row)
+      return
+    }
+
+    lastSessionClickRef.current = { rowId: row.id, time }
   }
 
   function executeSelectedShortcut() {
@@ -460,6 +475,7 @@ export function DashboardPage() {
               hoveredRowId={hoveredRowId}
               onRowHover={setHoveredRowId}
               onRowSelect={(nextSelection) => setSelection(nextSelection)}
+              onRowClick={handleSessionRowClick}
             />
           ))}
         </scrollbox>
@@ -477,7 +493,7 @@ export function DashboardPage() {
           paddingBottom: SIDEBAR_PADDING_Y,
         }}
       >
-        <box style={{ flexShrink: 0, marginBottom: 1, width: sidebarContentWidth }}>
+        <box style={{ flexShrink: 0, width: sidebarContentWidth }}>
           <HeaderTitle />
         </box>
         <SearchInput
@@ -487,7 +503,7 @@ export function DashboardPage() {
           onInput={setSearchValue}
           onFocus={() => setSearchFocused(true)}
         />
-        <box style={{ flexShrink: 0, marginTop: 2, width: sidebarContentWidth }}>
+        <box style={{ flexShrink: 0, marginTop: 1, width: sidebarContentWidth }}>
           <Header snapshot={snapshot} width={sidebarContentWidth} />
         </box>
         <box style={{ flexShrink: 0, marginTop: 2, width: sidebarContentWidth }}>
