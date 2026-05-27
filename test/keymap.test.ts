@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { command } from "../src/keymap/command.ts"
+import { dashboardKeymap, type DashboardKeymapCtx } from "../src/keymap/dashboard.ts"
 import { createDispatcher } from "../src/keymap/dispatcher.ts"
 import { Keymap } from "../src/keymap/keymap.ts"
 import { parseKey } from "../src/keymap/keys.ts"
@@ -48,5 +49,39 @@ describe("keymap dispatcher", () => {
 
     expect(dispatcher.dispatch(parseKey("return")).kind).toBe("no-match")
     expect(childRan).toBe(false)
+  })
+
+  test("help dialog supports selection and executing commands", () => {
+    const moves: number[] = []
+    let executed = false
+    let closed = false
+    const ctx: DashboardKeymapCtx = {
+      textInputActive: false,
+      helpDialog: {
+        commandCount: 2,
+        close: () => {
+          closed = true
+        },
+        moveSelection: (delta) => moves.push(delta),
+        executeSelected: () => {
+          executed = true
+        },
+      },
+      addSessionDialog: null,
+      promptDialog: null,
+      deleteSessionDialog: null,
+      search: null,
+      listNav: null,
+      quit: () => {},
+    }
+    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(moves).toEqual([1])
+    expect(executed).toBe(true)
+    expect(closed).toBe(true)
   })
 })

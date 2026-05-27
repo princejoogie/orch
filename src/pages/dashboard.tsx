@@ -3,7 +3,8 @@ import { useRenderer, useTerminalDimensions } from "@opentui/react"
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Header, HeaderTitle } from "../components/header.tsx"
-import { AddSessionDialog, DeleteSessionDialog, PromptDialog, ShortcutsDialog } from "../components/session-dialogs.tsx"
+import { AddSessionDialog, DeleteSessionDialog, PromptDialog } from "../components/session-dialogs.tsx"
+import { SHORTCUTS, ShortcutsDialog, type ShortcutAction } from "../components/shortcuts-dialog.tsx"
 import { SectionView, TableHeader } from "../components/session-table.tsx"
 import { SearchInput } from "../components/ui/input.tsx"
 import { ProjectTabs } from "../components/ui/tabs.tsx"
@@ -50,6 +51,7 @@ export function DashboardPage() {
   const [promptDialog, setPromptDialog] = useState<PromptDialogState>()
   const [deleteDialog, setDeleteDialog] = useState<DeleteSessionDialogState>()
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false)
+  const [selectedShortcutIndex, setSelectedShortcutIndex] = useState(0)
   const [hoveredRowId, setHoveredRowId] = useState<string>()
 
   const activeTabId = useDashboardStore((store) => store.activeTabId)
@@ -113,7 +115,15 @@ export function DashboardPage() {
     dashboardKeymap,
     {
       textInputActive: searchFocused || Boolean(addSessionDialog) || Boolean(promptDialog),
-      helpDialog: shortcutsDialogOpen ? { close: () => setShortcutsDialogOpen(false) } : null,
+      helpDialog: shortcutsDialogOpen
+        ? {
+            commandCount: SHORTCUTS.length,
+            close: () => setShortcutsDialogOpen(false),
+            moveSelection: (delta) =>
+              setSelectedShortcutIndex((current) => nextIndex(current, delta, SHORTCUTS.length)),
+            executeSelected: executeSelectedShortcut,
+          }
+        : null,
       addSessionDialog: addSessionDialog
         ? {
             worktreeCount: addSessionDialog.worktrees.length,
@@ -150,7 +160,7 @@ export function DashboardPage() {
                 if (currentRow) void openTmuxSession(currentRow)
               },
               focusSearch: () => setSearchFocused(true),
-              openHelp: () => setShortcutsDialogOpen(true),
+              openHelp: openShortcutsDialog,
               selectTab: (index) => {
                 const tab = tabs[index]
                 if (tab) setActiveTabId(tab.id)
@@ -210,6 +220,82 @@ export function DashboardPage() {
     const worktrees = worktreeOptions(activeTab)
     if (worktrees.length === 0) return
     setAddSessionDialog({ projectTitle: activeTab.title, worktrees, worktreeIndex: 0, value: "", sending: false })
+  }
+
+  function openShortcutsDialog() {
+    setSelectedShortcutIndex(0)
+    setShortcutsDialogOpen(true)
+  }
+
+  function executeSelectedShortcut() {
+    const shortcut = SHORTCUTS[selectedShortcutIndex]
+    if (!shortcut || !executeShortcutAction(shortcut.action)) return
+    setShortcutsDialogOpen(false)
+  }
+
+  function executeShortcutAction(action: ShortcutAction): boolean {
+    switch (action) {
+      case "prompt-selected-session":
+        if (!currentRow) return false
+        openPromptDialog(currentRow)
+        return true
+      case "create-session":
+        if (!activeTab || worktreeOptions(activeTab).length === 0) return false
+        openAddSessionDialog()
+        return true
+      case "delete-selected-session":
+        if (!currentRow) return false
+        setDeleteDialog({ row: currentRow })
+        return true
+      case "open-selected-in-tmux":
+        if (!currentRow) return false
+        void openTmuxSession(currentRow)
+        return true
+      case "move-selection-down":
+        setSelection((current) => moveSelection(current, 1, rowsBySection))
+        return true
+      case "move-selection-up":
+        setSelection((current) => moveSelection(current, -1, rowsBySection))
+        return true
+      case "half-page-down":
+        setSelection((current) => moveSelectionClamped(current, halfPage(tableHeight), rowsBySection))
+        return true
+      case "half-page-up":
+        setSelection((current) => moveSelectionClamped(current, -halfPage(tableHeight), rowsBySection))
+        return true
+      case "jump-to-top":
+        setSelection((current) => selectionEdge(current, "top", rowsBySection))
+        return true
+      case "jump-to-bottom":
+        setSelection((current) => selectionEdge(current, "bottom", rowsBySection))
+        return true
+      case "next-project": {
+        const tab = tabs[nextIndex(activeTabIndex, 1, tabs.length)]
+        setActiveTabId(tab?.id)
+        return tabs.length > 0
+      }
+      case "previous-project": {
+        const tab = tabs[nextIndex(activeTabIndex, -1, tabs.length)]
+        setActiveTabId(tab?.id)
+        return tabs.length > 0
+      }
+      case "select-project":
+        return false
+      case "focus-search":
+        setSearchFocused(true)
+        return true
+      case "open-help":
+        return true
+      case "refresh-sessions":
+        void query.refetch()
+        return true
+      case "toggle-console":
+        renderer.console.toggle()
+        return true
+      case "quit":
+        renderer.destroy()
+        return true
+    }
   }
 
   function openPromptDialog(row: SessionRow) {
@@ -441,7 +527,9 @@ export function DashboardPage() {
       {deleteDialog ? (
         <DeleteSessionDialog state={deleteDialog} width={dimensions.width} height={dimensions.height} />
       ) : null}
-      {shortcutsDialogOpen ? <ShortcutsDialog width={dimensions.width} height={dimensions.height} /> : null}
+      {shortcutsDialogOpen ? (
+        <ShortcutsDialog width={dimensions.width} height={dimensions.height} selectedIndex={selectedShortcutIndex} />
+      ) : null}
     </box>
   )
 }

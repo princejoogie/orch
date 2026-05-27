@@ -1,4 +1,4 @@
-import { TextAttributes, type KeyBinding, type TextareaRenderable } from "@opentui/core"
+import { TextAttributes, type KeyBinding, type MouseEvent, type TextareaRenderable } from "@opentui/core"
 import { useRef, type ReactNode } from "react"
 import { truncate, type WrappedLine } from "../../lib/utils.ts"
 import { theme } from "../../theme.ts"
@@ -11,6 +11,8 @@ const DIALOG_TITLE = theme.text
 const DIALOG_TEXT = theme.text
 const DIALOG_MUTED = theme.textMuted
 const DIALOG_HINT = theme.textMuted
+const DIALOG_SEPARATOR = theme.border
+const DIALOG_COUNT = theme.primary
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
@@ -29,6 +31,11 @@ type DialogProps = {
   height: number
   danger?: boolean
   children: ReactNode
+}
+
+export function fitCell(text: string, width: number, align: "left" | "right" = "left"): string {
+  const trimmed = truncate(text, width)
+  return align === "right" ? trimmed.padStart(width, " ") : trimmed.padEnd(width, " ")
 }
 
 export function Dialog({ screenWidth, screenHeight, width, height, danger, children }: DialogProps) {
@@ -50,6 +57,277 @@ export function Dialog({ screenWidth, screenHeight, width, height, danger, child
     >
       {children}
     </box>
+  )
+}
+
+export function PlainLine({ text, fg = DIALOG_TEXT, bg }: { text: string; fg?: string; bg?: string | undefined }) {
+  return (
+    <box style={{ height: 1 }}>
+      <text content={text} style={{ fg, ...(bg ? { bg } : {}) }} />
+    </box>
+  )
+}
+
+export function TextLine({
+  children,
+  fg = DIALOG_TEXT,
+  bg,
+  width,
+}: {
+  children: ReactNode
+  fg?: string
+  bg?: string | undefined
+  width?: number | undefined
+}) {
+  return (
+    <box style={{ height: 1, ...(width !== undefined ? { width } : {}) }}>
+      <text style={{ fg, ...(bg ? { bg } : {}) }}>{children}</text>
+    </box>
+  )
+}
+
+export function Divider({
+  width,
+  junctionAt,
+  junctionChar = "┼",
+}: {
+  width: number
+  junctionAt?: number
+  junctionChar?: string
+}) {
+  const line = Array.from({ length: width }, (_, index) => (index === junctionAt ? junctionChar : "─")).join("")
+  return <PlainLine text={line} fg={DIALOG_SEPARATOR} />
+}
+
+export function PaddedRow({ children }: { children: ReactNode }) {
+  return <box style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>{children}</box>
+}
+
+export function ModalFrame({
+  children,
+  left,
+  top,
+  width,
+  height,
+  junctionRows = [],
+  topJunctionColumns = [],
+}: {
+  children: ReactNode
+  left: number
+  top: number
+  width: number
+  height: number
+  junctionRows?: readonly number[]
+  topJunctionColumns?: readonly number[]
+}) {
+  const innerWidth = Math.max(1, width - 2)
+  const innerHeight = Math.max(1, height - 2)
+  const junctions = new Set(junctionRows)
+  const topJunctions = new Set(topJunctionColumns)
+  const topBorder = Array.from({ length: innerWidth }, (_, index) => (topJunctions.has(index) ? "┬" : "─")).join("")
+
+  return (
+    <box
+      style={{
+        position: "absolute",
+        zIndex: 20,
+        left,
+        top,
+        width,
+        height,
+        flexDirection: "column",
+        backgroundColor: DIALOG_BACKGROUND,
+      }}
+    >
+      <PlainLine text={`┌${topBorder}┐`} fg={DIALOG_SEPARATOR} />
+      <box style={{ height: innerHeight, flexDirection: "row" }}>
+        <box style={{ width: 1, height: innerHeight, flexDirection: "column" }}>
+          {Array.from({ length: innerHeight }, (_, index) => (
+            <PlainLine key={index} text={junctions.has(index) ? "├" : "│"} fg={DIALOG_SEPARATOR} />
+          ))}
+        </box>
+        <box style={{ width: innerWidth, height: innerHeight, flexDirection: "column" }}>{children}</box>
+        <box style={{ width: 1, height: innerHeight, flexDirection: "column" }}>
+          {Array.from({ length: innerHeight }, (_, index) => (
+            <PlainLine key={index} text={junctions.has(index) ? "┤" : "│"} fg={DIALOG_SEPARATOR} />
+          ))}
+        </box>
+      </box>
+      <PlainLine text={`└${"─".repeat(innerWidth)}┘`} fg={DIALOG_SEPARATOR} />
+    </box>
+  )
+}
+
+export type HintItem = {
+  readonly key: string
+  readonly label: string
+  readonly when?: boolean | undefined
+  readonly disabled?: boolean | undefined
+}
+
+export function HintRow({ items }: { items: readonly HintItem[] }) {
+  const visible = items.filter((item) => item.when !== false)
+  return (
+    <TextLine>
+      {visible.flatMap((item, index) => [
+        <span key={`${item.key}:${item.label}:key`} fg={item.disabled ? DIALOG_SEPARATOR : DIALOG_COUNT}>
+          {item.key}
+        </span>,
+        <span
+          key={`${item.key}:${item.label}:label`}
+          fg={item.disabled ? DIALOG_SEPARATOR : DIALOG_HINT}
+        >{` ${item.label}${index < visible.length - 1 ? "  " : ""}`}</span>,
+      ])}
+    </TextLine>
+  )
+}
+
+function searchHeaderText(title: string, contentWidth: number, countText: string) {
+  const reserved = 1 + 1 + 1 + 10 + (countText.length > 0 ? countText.length + 2 : 0)
+  return truncate(title, Math.max(6, Math.min(title.length, contentWidth - reserved)))
+}
+
+export function SearchDialogFrame({
+  screenWidth,
+  screenHeight,
+  width,
+  height,
+  title,
+  query,
+  placeholder,
+  countText,
+  footer,
+  onBodyMouseScroll,
+  children,
+}: {
+  screenWidth: number
+  screenHeight: number
+  width: number
+  height: number
+  title: string
+  query: string
+  placeholder: string
+  countText: string
+  footer: ReactNode
+  onBodyMouseScroll?: (event: MouseEvent) => void
+  children: ReactNode
+}) {
+  const left = Math.max(1, Math.floor((screenWidth - width) / 2))
+  const top = Math.max(1, Math.floor((screenHeight - height) / 2))
+  const innerWidth = Math.max(16, width - 2)
+  const contentWidth = Math.max(14, innerWidth - 2)
+  const bodyHeight = Math.max(1, height - 6)
+  const titleText = searchHeaderText(title, contentWidth, countText)
+  const dividerColumn = 1 + titleText.length + 1
+  const headerDivider = "│"
+  const searchWidth = Math.max(1, contentWidth - titleText.length - headerDivider.length - countText.length - 5)
+  const queryText = query ? fitCell(query, searchWidth) : fitCell(placeholder, searchWidth)
+
+  return (
+    <ModalFrame
+      left={left}
+      top={top}
+      width={width}
+      height={height}
+      junctionRows={[1, height - 4]}
+      topJunctionColumns={[dividerColumn]}
+    >
+      <PaddedRow>
+        <TextLine>
+          <span fg={DIALOG_COUNT} attributes={TextAttributes.BOLD}>
+            {titleText}
+          </span>
+          <span> </span>
+          <span fg={DIALOG_SEPARATOR}>{headerDivider}</span>
+          <span> </span>
+          <span fg={query ? DIALOG_TEXT : DIALOG_MUTED}>{queryText}</span>
+          <span> </span>
+          <span fg={DIALOG_MUTED}>{countText}</span>
+        </TextLine>
+      </PaddedRow>
+      <Divider width={innerWidth} junctionAt={dividerColumn} junctionChar="┴" />
+      <box
+        style={{ height: bodyHeight, flexDirection: "column" }}
+        {...(onBodyMouseScroll ? { onMouseScroll: onBodyMouseScroll } : {})}
+      >
+        {children}
+      </box>
+      <Divider width={innerWidth} />
+      <PaddedRow>{footer}</PaddedRow>
+    </ModalFrame>
+  )
+}
+
+export function standardDialogBodyHeight(height: number, hasMiddleRow = false): number {
+  return Math.max(1, height - (hasMiddleRow ? 9 : 7))
+}
+
+export function StandardDialogFrame({
+  screenWidth,
+  screenHeight,
+  width,
+  height,
+  title,
+  danger = false,
+  headerRight,
+  subtitle,
+  middleRow,
+  footer,
+  bodyPadding = 1,
+  children,
+}: {
+  screenWidth: number
+  screenHeight: number
+  width: number
+  height: number
+  title: string
+  danger?: boolean
+  headerRight?: string | undefined
+  subtitle: ReactNode
+  middleRow?: ReactNode
+  footer: ReactNode
+  bodyPadding?: number
+  children: ReactNode
+}) {
+  const left = Math.max(1, Math.floor((screenWidth - width) / 2))
+  const top = Math.max(1, Math.floor((screenHeight - height) / 2))
+  const innerWidth = Math.max(16, width - 2)
+  const contentWidth = Math.max(14, innerWidth - 2)
+  const hasMiddleRow = middleRow !== undefined && middleRow !== null && middleRow !== false
+  const bodyHeight = standardDialogBodyHeight(height, hasMiddleRow)
+  const rightText = headerRight ?? ""
+  const headerGap = Math.max(1, contentWidth - title.length - rightText.length)
+  const junctionRows = hasMiddleRow ? [2, 4, height - 4] : [2, height - 4]
+
+  return (
+    <ModalFrame left={left} top={top} width={width} height={height} junctionRows={junctionRows}>
+      <PaddedRow>
+        <TextLine>
+          <span fg={danger ? DIALOG_DANGER : DIALOG_COUNT} attributes={TextAttributes.BOLD}>
+            {title}
+          </span>
+          {headerRight ? (
+            <>
+              <span>{" ".repeat(headerGap)}</span>
+              <span fg={DIALOG_MUTED}>{headerRight}</span>
+            </>
+          ) : null}
+        </TextLine>
+      </PaddedRow>
+      <PaddedRow>{subtitle}</PaddedRow>
+      <Divider width={innerWidth} />
+      {hasMiddleRow ? (
+        <>
+          <PaddedRow>{middleRow}</PaddedRow>
+          <Divider width={innerWidth} />
+        </>
+      ) : null}
+      <box style={{ height: bodyHeight, flexDirection: "column", paddingLeft: bodyPadding, paddingRight: bodyPadding }}>
+        {children}
+      </box>
+      <Divider width={innerWidth} />
+      <PaddedRow>{footer}</PaddedRow>
+    </ModalFrame>
   )
 }
 

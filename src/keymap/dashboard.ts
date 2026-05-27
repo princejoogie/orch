@@ -2,7 +2,10 @@ import { context } from "./context.ts"
 import { confirmModalBindings } from "./helpers.ts"
 
 export interface HelpDialogCtx {
+  readonly commandCount: number
   readonly close: () => void
+  readonly moveSelection: (delta: -1 | 1) => void
+  readonly executeSelected: () => void
 }
 
 export interface AddSessionDialogCtx {
@@ -74,12 +77,24 @@ const tabNumberBindings = Array.from({ length: 9 }, (_, index) => ({
 
 const selectedSession = (ctx: ListNavCtx) => ctx.hasSelection || "No session selected."
 
-const helpDialogKeymap = HelpDialog({
-  id: "help.close",
-  title: "Close help",
-  keys: ["escape", "?"],
-  run: (ctx) => ctx.close(),
-})
+const helpDialogKeymap = HelpDialog(
+  { id: "help.close", title: "Close help", keys: ["escape", "?"], run: (ctx) => ctx.close() },
+  {
+    id: "help.previous",
+    title: "Previous help command",
+    keys: ["k", "up", "ctrl+p"],
+    enabled: (ctx) => ctx.commandCount > 1 || "Only one command.",
+    run: (ctx) => ctx.moveSelection(-1),
+  },
+  {
+    id: "help.next",
+    title: "Next help command",
+    keys: ["j", "down", "ctrl+n"],
+    enabled: (ctx) => ctx.commandCount > 1 || "Only one command.",
+    run: (ctx) => ctx.moveSelection(1),
+  },
+  { id: "help.execute", title: "Run selected help command", keys: ["return"], run: (ctx) => ctx.executeSelected() },
+)
 
 const addSessionDialogKeymap = AddSessionDialog(
   { id: "session-new.cancel", title: "Cancel", keys: ["escape"], run: (ctx) => ctx.close() },
