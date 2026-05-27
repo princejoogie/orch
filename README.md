@@ -4,7 +4,7 @@ Terminal orchestrator for [opencode](https://opencode.ai/) sessions across proje
 
 `orch` gives you one keyboard-driven place to watch active opencode sessions, spot sessions that need input, prompt or create sessions, delete stale sessions, and jump back into the right tmux workspace without leaving the terminal.
 
-<img width="2556" height="1371" alt="image" src="https://github.com/user-attachments/assets/8e03f0f6-8c81-4205-91a3-62557e8c6d8e" />
+<img width="2539" height="1363" alt="orch demo" src="https://github.com/user-attachments/assets/18ac61df-87c6-4ed1-b2ea-315ce8f49652" />
 
 ## Install
 
