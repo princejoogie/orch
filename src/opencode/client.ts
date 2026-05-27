@@ -60,6 +60,23 @@ export async function createSessionWithPrompt(input: {
   return session.data.id
 }
 
+export async function deleteSession(input: {
+  sessionID: string
+  directory?: string
+  workspaceID?: string
+  serverUrl?: string
+}): Promise<void> {
+  const client = createPersistenceClient({ serverUrl: input.serverUrl })
+  await client.session.delete(
+    {
+      sessionID: input.sessionID,
+      directory: input.directory,
+      workspace: input.workspaceID,
+    },
+    { throwOnError: true },
+  )
+}
+
 export async function loadLatestMessage(input: {
   sessionID: string
   directory?: string
@@ -78,6 +95,26 @@ export async function loadLatestMessage(input: {
   )
 
   return extractLatestText(result.data)
+}
+
+export async function loadLatestExchange(input: {
+  sessionID: string
+  directory?: string
+  workspaceID?: string
+  serverUrl?: string
+}): Promise<{ userMessage: string; assistantMessage: string }> {
+  const client = createPersistenceClient({ serverUrl: input.serverUrl })
+  const result = await client.session.messages(
+    {
+      sessionID: input.sessionID,
+      directory: input.directory,
+      workspace: input.workspaceID,
+      limit: 20,
+    },
+    { throwOnError: true },
+  )
+
+  return extractLatestExchange(result.data)
 }
 
 export async function loadContextUsage(input: {
@@ -143,6 +180,30 @@ function extractLatestText(messages: SessionMessagesResponse): string {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
     if (!message || message.info.role !== "assistant") continue
+
+    const text = textParts(message.parts)
+    if (text) return text
+  }
+  return ""
+}
+
+function extractLatestExchange(messages: SessionMessagesResponse): { userMessage: string; assistantMessage: string } {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.info.role !== "assistant") continue
+
+    const assistantMessage = textParts(message.parts)
+    if (!assistantMessage) continue
+
+    return { userMessage: precedingUserText(messages, index), assistantMessage }
+  }
+  return { userMessage: "", assistantMessage: "" }
+}
+
+function precedingUserText(messages: SessionMessagesResponse, beforeIndex: number): string {
+  for (let index = beforeIndex - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (!message || message.info.role !== "user") continue
 
     const text = textParts(message.parts)
     if (text) return text

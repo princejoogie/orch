@@ -1,4 +1,6 @@
 import { createHash } from "node:crypto"
+import { realpathSync } from "node:fs"
+import { basename } from "node:path"
 import { $ } from "bun"
 import type { SessionRow } from "./opencode.ts"
 
@@ -15,6 +17,14 @@ type ProcessRow = {
   command: string
 }
 
+type GitWorktree = {
+  path: string
+  head?: string
+  branch?: string
+  bare: boolean
+  prunable: boolean
+}
+
 export async function openTmuxSessionForRow(row: SessionRow): Promise<void> {
   const sessionName = await resolveSessionName(row)
 
@@ -27,7 +37,7 @@ export async function openTmuxSessionForRow(row: SessionRow): Promise<void> {
 }
 
 async function resolveSessionName(row: SessionRow): Promise<string> {
-  const baseName = baseSessionName(row)
+  const baseName = (await tmsSessionName(row.directory)) ?? baseSessionName(row)
   const hashedName = `${baseName}_${hashPath(row.directory)}`
   const sessions = await listTmuxSessionNames()
 
@@ -42,6 +52,78 @@ function baseSessionName(row: SessionRow): string {
   }
 
   return sanitizeSessionName(row.projectTitle)
+}
+
+async function tmsSessionName(directory: string): Promise<string | undefined> {
+  const worktrees = await gitWorktrees(directory)
+  const main = worktrees.find((worktree) => !worktree.bare && !worktree.prunable)
+  if (!main) return undefined
+
+  const currentPath = realPath(directory)
+  const current = worktrees.find(
+    (worktree) => !worktree.bare && !worktree.prunable && realPath(worktree.path) === currentPath,
+  )
+  if (!current) return undefined
+
+  const repoName = basename(main.path)
+  if (realPath(current.path) === realPath(main.path)) return sanitizeSessionName(repoName)
+
+  return sanitizeSessionName(`${repoName}_${worktreeLabel(current)}`)
+}
+
+async function gitWorktrees(directory: string): Promise<GitWorktree[]> {
+  const result = await $`git -C ${directory} worktree list --porcelain`.quiet().nothrow()
+  if (result.exitCode !== 0) return []
+
+  const worktrees: GitWorktree[] = []
+  let current: GitWorktree | undefined
+
+  const flush = () => {
+    if (current) {
+      current.path = realPath(current.path)
+      worktrees.push(current)
+      current = undefined
+    }
+  }
+
+  for (const line of result.stdout.toString().split("\n")) {
+    if (line.trim() === "") {
+      flush()
+      continue
+    }
+
+    if (line.startsWith("worktree ")) {
+      flush()
+      current = { path: line.slice("worktree ".length), bare: false, prunable: false }
+      continue
+    }
+
+    if (!current) continue
+
+    if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
+    else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
+    else if (line === "bare") current.bare = true
+    else if (line.startsWith("prunable")) current.prunable = true
+  }
+
+  flush()
+  return worktrees
+}
+
+function worktreeLabel(worktree: GitWorktree): string {
+  return worktree.branch ?? worktree.head?.slice(0, 8) ?? basename(worktree.path)
+}
+
+function shortBranch(branch: string): string {
+  return branch.replace(/^refs\/heads\//, "").replace(/^refs\/remotes\//, "")
+}
+
+function realPath(path: string): string {
+  try {
+    return realpathSync(path)
+  } catch {
+    return path
+  }
 }
 
 function sanitizeSessionName(value: string): string {
@@ -160,7 +242,18 @@ async function runTmuxNewSession(name: string, path: string): Promise<void> {
 }
 
 async function runTmuxSwitchClient(name: string): Promise<void> {
+  await keepCurrentSessionAlive()
   await $`tmux switch-client -t ${name}`
+}
+
+async function keepCurrentSessionAlive(): Promise<void> {
+  const result = await $`tmux display-message -p "#{session_name}"`.quiet().nothrow()
+  if (result.exitCode !== 0) return
+
+  const currentSession = result.stdout.toString().trim()
+  if (!currentSession) return
+
+  await $`tmux set-option -t ${currentSession} destroy-unattached off`.quiet().nothrow()
 }
 
 async function runTmuxAttachSession(name: string): Promise<void> {
