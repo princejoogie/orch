@@ -1,9 +1,9 @@
 import { performance } from "node:perf_hooks"
-import { discoverOpencode, opencodeServerUrl } from "../src/opencode.ts"
+import { getSessions, opencodeServerUrl } from "../src/opencode.ts"
 
 const iterations = Number(Bun.argv.find((arg) => arg.startsWith("--iterations="))?.split("=")[1] ?? 20)
 const limit = Number(Bun.argv.find((arg) => arg.startsWith("--limit="))?.split("=")[1] ?? 300)
-const serverUrl = Bun.argv.find((arg) => arg.startsWith("--server="))?.slice("--server=".length) ?? opencodeServerUrl()
+const serverUrl = opencodeServerUrl()
 
 function percentile(values: number[], p: number): number {
   const sorted = [...values].sort((left, right) => left - right)
@@ -24,7 +24,7 @@ for (let i = 0; i < iterations; i += 1) {
   const started = performance.now()
   // Sequential on purpose: benchmark repeated polling cost, not parallel throughput.
   // oxlint-disable-next-line no-await-in-loop
-  const snapshot = await discoverOpencode({ serverUrl, limit })
+  const snapshot = await getSessions({ limit })
   rows = snapshot.rows.length
   snapshotTimes.push(performance.now() - started)
 }

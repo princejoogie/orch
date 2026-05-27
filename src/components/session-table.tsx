@@ -1,4 +1,5 @@
 import { TextAttributes } from "@opentui/core"
+import { useNow } from "../hooks/use-now.ts"
 import {
   formatAge,
   preview,
@@ -10,7 +11,7 @@ import {
   type Section,
   type Selection,
 } from "../lib/utils.ts"
-import type { SessionRow } from "../opencode.ts"
+import { type SessionRow } from "../opencode.ts"
 
 function tableLayout(width: number) {
   const gap = 4
@@ -49,7 +50,6 @@ export function SectionView({
   worktreeColors,
   selection,
   active,
-  now,
   width,
 }: {
   section: Section
@@ -57,11 +57,8 @@ export function SectionView({
   worktreeColors: Record<string, string>
   selection: Selection
   active: boolean
-  now: Date
   width: number
 }) {
-  const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
-
   return (
     <box style={{ flexDirection: "column", marginBottom: 1, width }}>
       <box
@@ -75,50 +72,69 @@ export function SectionView({
         <text content={` ${rows.length}`} style={{ fg: "#64748B" }} />
       </box>
       {rows.length === 0 ? <text content="  none" style={{ fg: "#475569" }} /> : null}
-      {rows.map((row, index) => {
-        const selected = active && selection.index === index
-        return (
-          <box
-            id={rowElementId(row)}
-            key={row.id}
-            style={{
-              flexDirection: "row",
-              flexWrap: "no-wrap",
-              height: 1,
-              overflow: "hidden",
-              width,
-              backgroundColor: selected ? "#334155" : undefined,
-            }}
-          >
-            <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
-            <text
-              content={truncate(row.title, titleWidth).padEnd(titleWidth)}
-              style={{ fg: selected ? "#F8FAFC" : "#E2E8F0", attributes: selected ? TextAttributes.BOLD : undefined }}
-            />
-            <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-            <text
-              content={truncate(preview(row.latestMessage), messageWidth).padEnd(messageWidth)}
-              style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
-            />
-            <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-            <text content="● " style={{ fg: worktreeColors[row.worktreeName] ?? "#94A3B8" }} />
-            <text
-              content={truncate(row.worktreeName, Math.max(1, worktreeWidth - 2)).padEnd(worktreeWidth - 2)}
-              style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
-            />
-            <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-            <text
-              content={formatContextUsage(row).padStart(contextWidth)}
-              style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }}
-            />
-            <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
-            <text
-              content={formatAge(row.updated, now).padStart(ageWidth)}
-              style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }}
-            />
-          </box>
-        )
-      })}
+      {rows.map((row, index) => (
+        <SessionItem
+          key={row.id}
+          row={row}
+          section={section}
+          selected={active && selection.index === index}
+          worktreeColors={worktreeColors}
+          width={width}
+        />
+      ))}
+    </box>
+  )
+}
+
+function SessionItem({
+  row,
+  section,
+  selected,
+  worktreeColors,
+  width,
+}: {
+  row: SessionRow
+  section: Section
+  selected: boolean
+  worktreeColors: Record<string, string>
+  width: number
+}) {
+  const now = useNow(80)
+  const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
+  const worktreeColor = worktreeColors[row.worktreeName] ?? "#94A3B8"
+
+  return (
+    <box
+      id={rowElementId(row)}
+      style={{
+        flexDirection: "row",
+        flexWrap: "no-wrap",
+        height: 1,
+        overflow: "hidden",
+        width,
+        backgroundColor: selected ? "#334155" : undefined,
+      }}
+    >
+      <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
+      <text
+        content={truncate(row.title, titleWidth).padEnd(titleWidth)}
+        style={{ fg: selected ? "#F8FAFC" : "#E2E8F0", attributes: selected ? TextAttributes.BOLD : undefined }}
+      />
+      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text
+        content={truncate(preview(row.latestMessage), messageWidth).padEnd(messageWidth)}
+        style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
+      />
+      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text content="● " style={{ fg: worktreeColor }} />
+      <text
+        content={truncate(row.worktreeName, Math.max(1, worktreeWidth - 2)).padEnd(worktreeWidth - 2)}
+        style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }}
+      />
+      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text content={formatContextUsage(row).padStart(contextWidth)} style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }} />
+      <text content={gap} style={{ fg: selected ? "#CBD5E1" : "#94A3B8" }} />
+      <text content={formatAge(row.updated, now).padStart(ageWidth)} style={{ fg: selected ? "#F8FAFC" : "#CBD5E1" }} />
     </box>
   )
 }

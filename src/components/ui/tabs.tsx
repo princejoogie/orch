@@ -1,6 +1,8 @@
 import { TextAttributes } from "@opentui/core"
 import { count, tabElementId, truncate, type ProjectTab } from "../../lib/utils.ts"
 
+const TABS_PADDING_X = 2
+
 export function ProjectTabs({ tabs, activeIndex, width }: { tabs: ProjectTab[]; activeIndex: number; width: number }) {
   const tabWidth = Math.max(10, Math.min(24, Math.floor(width / Math.max(1, Math.min(tabs.length, 5))) - 1))
 
@@ -9,9 +11,9 @@ export function ProjectTabs({ tabs, activeIndex, width }: { tabs: ProjectTab[]; 
       style={{
         flexDirection: "row",
         flexShrink: 0,
-        paddingLeft: 1,
-        paddingRight: 1,
-        width: width + 2,
+        paddingLeft: TABS_PADDING_X,
+        paddingRight: TABS_PADDING_X,
+        width: width + TABS_PADDING_X * 2,
       }}
     >
       {tabs.length === 0 ? <text content="no projects" style={{ fg: "#64748B" }} /> : null}

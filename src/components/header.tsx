@@ -2,6 +2,8 @@ import { TextAttributes } from "@opentui/core"
 import { countLane, truncate } from "../lib/utils.ts"
 import type { DashboardSnapshot } from "../opencode.ts"
 
+const HEADER_PADDING_X = 2
+
 export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot; width: number }) {
   const rows = snapshot?.rows ?? []
   const now = Date.now()
@@ -15,9 +17,9 @@ export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot; widt
         flexDirection: "row",
         flexShrink: 0,
         justifyContent: "space-between",
-        paddingLeft: 1,
-        paddingRight: 1,
-        width: width + 2,
+        paddingLeft: HEADER_PADDING_X,
+        paddingRight: HEADER_PADDING_X,
+        width: width + HEADER_PADDING_X * 2,
       }}
     >
       <text content="opencode orchestrator" style={{ fg: "#7DD3FC", attributes: TextAttributes.BOLD }} />

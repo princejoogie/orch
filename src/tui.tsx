@@ -1,6 +1,7 @@
 import { createCliRenderer } from "@opentui/core"
 import { createRoot } from "@opentui/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { DashboardStoreProvider } from "./pages/dashboard.store.ts"
 import { DashboardPage } from "./pages/dashboard.tsx"
 
 interface RunTuiOptions {
@@ -8,7 +9,7 @@ interface RunTuiOptions {
 }
 
 export async function runTui(_options: RunTuiOptions): Promise<void> {
-  let resolveDone = () => {}
+  let resolveDone!: () => void
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve
   })
@@ -26,7 +27,9 @@ export async function runTui(_options: RunTuiOptions): Promise<void> {
   const queryClient = new QueryClient()
   createRoot(renderer).render(
     <QueryClientProvider client={queryClient}>
-      <DashboardPage />
+      <DashboardStoreProvider>
+        <DashboardPage />
+      </DashboardStoreProvider>
     </QueryClientProvider>,
   )
 

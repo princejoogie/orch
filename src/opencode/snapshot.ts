@@ -1,33 +1,32 @@
 import type { GlobalSession, SessionStatus as OpencodeSessionStatus } from "@opencode-ai/sdk/v2"
-import { createPersistenceClient, DEFAULT_LIMIT, opencodeServerUrl } from "./client.ts"
+import { DEFAULT_LIMIT, loadContextUsage, loadLatestMessages, opencodeClient, opencodeServerUrl } from "./client.ts"
 import type { DashboardSnapshot, SessionRow, SessionStatus } from "./types.ts"
 
 export const ACTIVE_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000
 
-export async function discoverOpencode(
-  options: { limit?: number; serverUrl?: string } = {},
-): Promise<DashboardSnapshot> {
-  const serverUrl = options.serverUrl ?? opencodeServerUrl()
+export async function getSessions(options: { limit?: number } = {}): Promise<DashboardSnapshot> {
+  const serverUrl = opencodeServerUrl()
   const since = Date.now() - ACTIVE_SESSION_WINDOW_MS
-  const client = createPersistenceClient({ serverUrl })
-  const sessions = await client.experimental.session.list(
+  const sessions = await opencodeClient.experimental.session.list(
     { archived: false, limit: options.limit ?? DEFAULT_LIMIT, start: since },
     { throwOnError: true },
   )
-  const statuses = await loadStatuses(client, sessions.data)
+  const [statuses, details] = await Promise.all([loadStatuses(sessions.data), loadSessionDetails(sessions.data)])
 
   return {
-    rows: sessions.data.map((session) => toRow(session, statuses.get(routeKey(session))?.[session.id])),
+    rows: sessions.data.map((session) =>
+      toRow(session, statuses.get(routeKey(session))?.[session.id], details.get(session.id)),
+    ),
     serverUrl,
     since,
     scannedAt: new Date(),
   }
 }
 
-type PersistenceClient = ReturnType<typeof createPersistenceClient>
 type StatusMap = Record<string, OpencodeSessionStatus>
+type SessionDetails = Pick<SessionRow, "latestMessage" | "latestUserMessage" | "contextTokens" | "contextPercent">
 
-async function loadStatuses(client: PersistenceClient, sessions: GlobalSession[]): Promise<Map<string, StatusMap>> {
+async function loadStatuses(sessions: GlobalSession[]): Promise<Map<string, StatusMap>> {
   const routes = new Map<string, { directory: string; workspaceID?: string }>()
   for (const session of sessions) {
     routes.set(routeKey(session), { directory: session.directory, workspaceID: session.workspaceID })
@@ -36,7 +35,7 @@ async function loadStatuses(client: PersistenceClient, sessions: GlobalSession[]
   const entries = await Promise.all(
     [...routes.entries()].map(async ([key, route]) => {
       try {
-        const result = await client.session.status(
+        const result = await opencodeClient.session.status(
           { directory: route.directory, workspace: route.workspaceID },
           { throwOnError: true },
         )
@@ -50,16 +49,52 @@ async function loadStatuses(client: PersistenceClient, sessions: GlobalSession[]
   return new Map(entries)
 }
 
+async function loadSessionDetails(sessions: GlobalSession[]): Promise<Map<string, SessionDetails>> {
+  const entries = await Promise.all(
+    sessions.map(async (session): Promise<readonly [string, SessionDetails]> => {
+      try {
+        const messages = await loadLatestMessages({
+          sessionID: session.id,
+          directory: session.directory,
+          workspaceID: session.workspaceID,
+        })
+        const context = await loadContextUsage({
+          sessionID: session.id,
+          directory: session.directory,
+          workspaceID: session.workspaceID,
+          historyAssistantMessage: messages.assistantInfo,
+        }).catch((): { tokens?: number; percent?: number } => ({}))
+        return [
+          session.id,
+          {
+            latestMessage: messages.assistantMessage,
+            latestUserMessage: messages.userMessage,
+            contextTokens: context.tokens,
+            contextPercent: context.percent,
+          },
+        ] as const
+      } catch {
+        return [session.id, { latestMessage: "", latestUserMessage: "" }] as const
+      }
+    }),
+  )
+
+  return new Map(entries)
+}
+
 function routeKey(input: { directory: string; workspaceID?: string }): string {
   return `${input.directory}\t${input.workspaceID ?? ""}`
 }
 
-function toRow(session: GlobalSession, status?: OpencodeSessionStatus): SessionRow {
+function toRow(session: GlobalSession, status?: OpencodeSessionStatus, details?: SessionDetails): SessionRow {
   const projectWorktree = session.project?.worktree
   return {
     id: session.id,
     title: session.title,
-    latestMessage: "",
+    latestMessage: details?.latestMessage ?? "",
+    latestUserMessage: details?.latestUserMessage ?? "",
+    contextTokens: details?.contextTokens,
+    contextPercent: details?.contextPercent,
     directory: session.directory,
     projectID: session.projectID,
     projectTitle: session.project?.name ?? formatDirectory(projectWorktree ?? session.directory),

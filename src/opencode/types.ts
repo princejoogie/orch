@@ -4,6 +4,7 @@ export type SessionRow = {
   id: string
   title: string
   latestMessage: string
+  latestUserMessage: string
   contextTokens?: number
   contextPercent?: number
   directory: string

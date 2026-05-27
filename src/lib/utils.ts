@@ -57,6 +57,8 @@ export type AddSessionDialogState = {
 
 export type DeleteSessionDialogState = {
   row: SessionRow
+  deleting?: boolean
+  error?: string
 }
 
 export type WrappedLine = {

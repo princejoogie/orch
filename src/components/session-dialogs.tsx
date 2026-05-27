@@ -138,7 +138,7 @@ export function DeleteSessionDialog({
   height: number
 }) {
   const dialogWidth = Math.min(Math.max(44, Math.floor(width * 0.55)), 72, width - 4)
-  const dialogHeight = 8
+  const dialogHeight = state.error ? 12 : 11
 
   return (
     <Dialog screenWidth={width} screenHeight={height} width={dialogWidth} height={dialogHeight} danger>
@@ -146,8 +146,9 @@ export function DeleteSessionDialog({
       <DialogDescription marginTop={1}>{truncate(state.row.title, dialogWidth - 4)}</DialogDescription>
       <DialogDescription>{truncate(state.row.worktreeName, dialogWidth - 4)}</DialogDescription>
       <DialogDescription danger marginTop={1}>
-        This cannot be undone.
+        {state.deleting ? "Deleting session..." : "This cannot be undone."}
       </DialogDescription>
+      <DialogError error={state.error} width={dialogWidth} />
       <DialogHint>Enter/y confirm · Esc/n cancel</DialogHint>
     </Dialog>
   )
