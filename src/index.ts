@@ -6,13 +6,12 @@ const HELP_TEXT =
   `orch ${packageJson.version}
 
 Usage:
-  orch              Start the OpenTUI React interface
+  orch              Start the active opencode sessions table
   orch --help       Show this help
   orch --version    Show the current version
 
 Keys:
-  ↑/↓ or j/k        Move through actions
-  Enter             Run the selected action
+  r                 Refresh the opencode server snapshot
   ` +
   "`" +
   `                 Toggle the OpenTUI console

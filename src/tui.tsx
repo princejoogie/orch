@@ -1,91 +1,133 @@
-import { createCliRenderer, TextAttributes, type SelectOption } from "@opentui/core"
-import { createRoot, TimeToFirstDraw, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
-import { startTransition, useEffect, useState } from "react"
+import { createCliRenderer, type ScrollBoxRenderable } from "@opentui/core"
+import { createRoot, useKeyboard, useRenderer, useTerminalDimensions } from "@opentui/react"
+import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query"
+import { useEffect, useMemo, useRef, useState } from "react"
+import { discoverOpencode, loadLatestMessage, sendPrompt, type SessionRow } from "./opencode.ts"
+import {
+  Header,
+  PromptDialog,
+  ProjectTabs,
+  SECTIONS,
+  SectionView,
+  TableHeader,
+  groupRowsByProject,
+  moveSelection,
+  nextIndex,
+  rowElementId,
+  rowInLane,
+  sectionElementId,
+  selectedRow,
+  clamp,
+  type PromptDialogState,
+  type Selection,
+} from "./utils.tsx"
 
-type AppAction = "status" | "console" | "debug" | "quit"
-
-type ActionOption = SelectOption & {
-  value: AppAction
-}
-
-const ACTIONS: ActionOption[] = [
-  {
-    name: "Show status",
-    description: "Refresh runtime details and the current working directory",
-    value: "status",
-  },
-  {
-    name: "Toggle console",
-    description: "OpenTUI's built-in console overlay",
-    value: "console",
-  },
-  {
-    name: "Toggle debug overlay",
-    description: "Inspect render stats and layout diagnostics",
-    value: "debug",
-  },
-  {
-    name: "Quit",
-    description: "Destroy the renderer and return to the shell",
-    value: "quit",
-  },
-]
-
-const ACTION_VALUES: ReadonlySet<string> = new Set(ACTIONS.map((action) => action.value))
+const POLL_INTERVAL_MS = 2_000
 
 interface RunTuiOptions {
   args: string[]
 }
 
-interface AppProps extends RunTuiOptions {
-  startedAt: Date
-}
-
-function isAppAction(value: unknown): value is AppAction {
-  return typeof value === "string" && ACTION_VALUES.has(value)
-}
-
-function formatElapsed(startedAt: Date, now: Date): string {
-  const seconds = Math.max(0, Math.floor((now.getTime() - startedAt.getTime()) / 1000))
-  const minutes = Math.floor(seconds / 60)
-  const remainder = seconds % 60
-  return `${minutes}m ${remainder.toString().padStart(2, "0")}s`
-}
-
-function App({ args, startedAt }: AppProps) {
+function App() {
   const renderer = useRenderer()
   const dimensions = useTerminalDimensions()
+  const listRef = useRef<ScrollBoxRenderable>(null)
+  const pendingLatestMessages = useRef(new Set<string>())
   const [now, setNow] = useState(() => new Date())
-  const [status, setStatus] = useState("Ready. Choose an action or press q to quit.")
+  const [activeTabIndex, setActiveTabIndex] = useState(0)
+  const [selection, setSelection] = useState<Selection>({ section: "working", index: 0 })
+  const [promptDialog, setPromptDialog] = useState<PromptDialogState | undefined>()
+  const [latestMessages, setLatestMessages] = useState<Record<string, { updated: number; text: string }>>({})
+  const query = useQuery({
+    queryKey: ["opencode-sessions"],
+    queryFn: () => discoverOpencode(),
+  })
 
-  const compact = dimensions.width < 72
-  const selectedBackgroundColor = compact ? "#243447" : "#1E3A5F"
+  const snapshot = query.data
+  const queryError = query.error instanceof Error ? query.error.message : query.error ? String(query.error) : undefined
+  const width = Math.max(30, dimensions.width - 6)
+  const tabs = useMemo(() => groupRowsByProject(snapshot?.rows ?? []), [snapshot?.rows])
+  const activeTab = tabs[activeTabIndex]
+  const rowsBySection = useMemo(
+    () => ({
+      working: withLatestMessages(
+        activeTab?.rows.filter((row) => rowInLane(row, "working", now)) ?? [],
+        latestMessages,
+      ),
+      "needs-input": withLatestMessages(
+        activeTab?.rows.filter((row) => rowInLane(row, "needs-input", now)) ?? [],
+        latestMessages,
+      ),
+      completed: withLatestMessages(
+        activeTab?.rows.filter((row) => rowInLane(row, "completed", now)) ?? [],
+        latestMessages,
+      ),
+    }),
+    [activeTab?.rows, latestMessages, now],
+  )
+  const activeSection = selection.section
+  const currentRow = selectedRow(selection, rowsBySection)
+  const workingCount = rowsBySection.working.length
+  const needsInputCount = rowsBySection["needs-input"].length
+  const completedCount = rowsBySection.completed.length
 
   useEffect(() => {
     const interval = setInterval(() => setNow(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
 
-  const runAction = (action: AppAction) => {
-    switch (action) {
-      case "status":
-        startTransition(() => {
-          setStatus(`Bun ${Bun.version} · ${process.cwd()}`)
+  useEffect(() => {
+    const interval = setInterval(() => void query.refetch(), POLL_INTERVAL_MS)
+    return () => clearInterval(interval)
+  }, [query])
+
+  useEffect(() => {
+    setActiveTabIndex((current) => clamp(current, 0, Math.max(0, tabs.length - 1)))
+  }, [tabs.length])
+
+  useEffect(() => {
+    if (!activeTab) return
+    for (const row of activeTab.rows) {
+      const key = `${row.id}:${row.updated}`
+      if (latestMessages[row.id]?.updated === row.updated) continue
+      if (pendingLatestMessages.current.has(key)) continue
+
+      pendingLatestMessages.current.add(key)
+      void loadLatestMessage({ sessionID: row.id, directory: row.directory, workspaceID: row.workspaceID })
+        .then((text) => {
+          setLatestMessages((current) => ({ ...current, [row.id]: { updated: row.updated, text } }))
         })
-        break
-      case "console":
-        renderer.console.toggle()
-        startTransition(() => setStatus("Console overlay toggled."))
-        break
-      case "debug":
-        renderer.toggleDebugOverlay()
-        startTransition(() => setStatus("Debug overlay toggled."))
-        break
-      case "quit":
-        renderer.destroy()
-        break
+        .catch(() => {
+          setLatestMessages((current) => ({ ...current, [row.id]: { updated: row.updated, text: "" } }))
+        })
+        .finally(() => {
+          pendingLatestMessages.current.delete(key)
+        })
     }
-  }
+  }, [activeTab, latestMessages])
+
+  useEffect(() => {
+    const lengths = {
+      working: workingCount,
+      "needs-input": needsInputCount,
+      completed: completedCount,
+    }
+    setSelection((current) => {
+      if (lengths[current.section] > 0) {
+        return { section: current.section, index: clamp(current.index, 0, lengths[current.section] - 1) }
+      }
+      if (lengths.working > 0) return { section: "working", index: 0 }
+      if (lengths["needs-input"] > 0) return { section: "needs-input", index: 0 }
+      if (lengths.completed > 0) return { section: "completed", index: 0 }
+      return { section: current.section, index: 0 }
+    })
+  }, [activeTab?.id, workingCount, needsInputCount, completedCount])
+
+  useEffect(() => {
+    const row = selectedRow(selection, rowsBySection)
+    const id = row ? rowElementId(row) : sectionElementId(selection.section)
+    listRef.current?.scrollChildIntoView(id)
+  }, [rowsBySection, selection])
 
   useKeyboard((key) => {
     if (key.ctrl && key.name === "c") {
@@ -93,21 +135,82 @@ function App({ args, startedAt }: AppProps) {
       renderer.destroy()
       return
     }
-
+    if (promptDialog) {
+      if (key.name === "escape") setPromptDialog(undefined)
+      return
+    }
     if (key.name === "escape" || key.name === "q") {
       renderer.destroy()
       return
     }
-
-    if (key.name === "d") {
-      runAction("debug")
+    if (key.name === "r") {
+      void query.refetch()
       return
     }
-
-    if (key.name === "`") {
-      runAction("console")
+    if (key.name === "return" || key.name === "enter") {
+      if (currentRow) openPromptDialog(currentRow)
+      return
     }
+    if (key.name === "tab") {
+      setActiveTabIndex((current) => nextIndex(current, key.shift ? -1 : 1, tabs.length))
+      return
+    }
+    if (key.name === "j" || key.name === "down") {
+      setSelection((current) => moveSelection(current, 1, rowsBySection))
+      return
+    }
+    if (key.name === "k" || key.name === "up") {
+      setSelection((current) => moveSelection(current, -1, rowsBySection))
+      return
+    }
+    if (key.name === "d") {
+      renderer.toggleDebugOverlay()
+      return
+    }
+    if (key.name === "`") renderer.console.toggle()
   })
+
+  function openPromptDialog(row: NonNullable<typeof currentRow>) {
+    setPromptDialog({ row, value: "", sending: false, loadingPreview: true })
+    void loadLatestMessage({ sessionID: row.id, directory: row.directory, workspaceID: row.workspaceID })
+      .then((latestMessage) => {
+        setPromptDialog((current) =>
+          current?.row.id === row.id
+            ? { ...current, loadingPreview: false, row: { ...current.row, latestMessage } }
+            : current,
+        )
+      })
+      .catch(() => {
+        setPromptDialog((current) => (current?.row.id === row.id ? { ...current, loadingPreview: false } : current))
+      })
+  }
+
+  async function submitPrompt(value: string) {
+    const trimmed = value.trim()
+    if (!trimmed || !promptDialog || promptDialog.sending) return
+
+    setPromptDialog((current) => (current ? { ...current, sending: true, error: undefined } : current))
+    try {
+      await sendPrompt({
+        sessionID: promptDialog.row.id,
+        directory: promptDialog.row.directory,
+        workspaceID: promptDialog.row.workspaceID,
+        text: trimmed,
+      })
+      setPromptDialog(undefined)
+      await query.refetch()
+    } catch (promptError) {
+      setPromptDialog((current) =>
+        current
+          ? {
+              ...current,
+              sending: false,
+              error: promptError instanceof Error ? promptError.message : String(promptError),
+            }
+          : current,
+      )
+    }
+  }
 
   return (
     <box
@@ -116,85 +219,77 @@ function App({ args, startedAt }: AppProps) {
         height: dimensions.height,
         flexDirection: "column",
         backgroundColor: "#071018",
-        padding: compact ? 1 : 2,
+        padding: 1,
       }}
     >
-      <box style={{ flexDirection: "row", alignItems: "center" }}>
-        {compact ? (
-          <text content="orch" style={{ fg: "#7DD3FC", attributes: TextAttributes.BOLD }} />
-        ) : (
-          <ascii-font text="orch" style={{ font: "tiny", color: "#7DD3FC" }} />
-        )}
-        <text
-          content=" OpenTUI React CLI"
-          style={{ fg: "#E2E8F0", marginLeft: compact ? 1 : 2, attributes: TextAttributes.BOLD }}
-        />
-      </box>
-
-      <box
-        title="Session"
-        titleAlignment="center"
+      <Header snapshot={snapshot} fetching={query.isFetching} />
+      {query.isPending ? <text content="loading sessions…" style={{ fg: "#38BDF8", marginTop: 1 }} /> : null}
+      {queryError ? <text content={`error: ${queryError}`} style={{ fg: "#F87171", marginTop: 1 }} /> : null}
+      <ProjectTabs tabs={tabs} activeIndex={activeTabIndex} width={width} />
+      <scrollbox
+        ref={listRef}
+        focused
         style={{
-          border: true,
-          borderColor: "#334155",
-          focusedBorderColor: "#38BDF8",
+          contentOptions: { flexDirection: "column" },
           flexDirection: "column",
-          marginTop: 1,
-          padding: 1,
-        }}
-      >
-        <text content={`Started: ${startedAt.toLocaleTimeString()} · Uptime: ${formatElapsed(startedAt, now)}`} />
-        <text content={`Terminal: ${dimensions.width}x${dimensions.height} · Args: ${args.join(" ") || "none"}`} />
-        <text content={status} style={{ fg: "#A7F3D0", marginTop: 1 }} />
-      </box>
-
-      <box
-        title="Actions"
-        bottomTitle="Enter runs · q quits"
-        titleAlignment="center"
-        bottomTitleAlignment="right"
-        style={{
-          border: true,
-          borderColor: "#475569",
-          focusedBorderColor: "#38BDF8",
           flexGrow: 1,
           marginTop: 1,
+          padding: 1,
+          scrollX: false,
+          scrollY: true,
+          scrollbarOptions: { showArrows: false },
+          viewportCulling: true,
         }}
       >
-        <select
-          focused
-          options={ACTIONS}
-          onSelect={(_, option) => {
-            if (isAppAction(option?.value)) {
-              runAction(option.value)
-            }
-          }}
-          style={{
-            height: "100%",
-            backgroundColor: "transparent",
-            focusedBackgroundColor: "transparent",
-            selectedBackgroundColor,
-            selectedTextColor: "#FDE68A",
-            descriptionColor: "#94A3B8",
-            selectedDescriptionColor: "#CBD5E1",
-          }}
-          showDescription
-          showScrollIndicator
-          wrapSelection
-          fastScrollStep={3}
+        {snapshot && snapshot.rows.length === 0 ? (
+          <box style={{ flexDirection: "column" }}>
+            <text content="No sessions found on the opencode persistence server." style={{ fg: "#FDE68A" }} />
+            <text content={snapshot.serverUrl} style={{ fg: "#64748B" }} />
+          </box>
+        ) : null}
+        {snapshot && snapshot.rows.length > 0 ? <TableHeader width={width} /> : null}
+        {SECTIONS.map((section) => (
+          <SectionView
+            key={section.status}
+            section={section}
+            rows={rowsBySection[section.status]}
+            worktreeColors={activeTab?.worktreeColors ?? {}}
+            selection={selection}
+            active={activeSection === section.status}
+            now={now}
+            width={width}
+          />
+        ))}
+      </scrollbox>
+      <box style={{ flexDirection: "row", justifyContent: "flex-end" }}>
+        <text
+          content="enter prompt · tab/shift-tab project · j/k move · r refresh · q quit"
+          style={{ fg: "#64748B" }}
         />
       </box>
-
-      <TimeToFirstDraw />
-      <text
-        content="Keys: ↑/↓ or j/k move · Enter runs · ` console · d debug · q/Esc/Ctrl+C quit"
-        style={{ fg: "#94A3B8", marginTop: 1 }}
-      />
+      {promptDialog ? (
+        <PromptDialog
+          state={promptDialog}
+          width={dimensions.width}
+          height={dimensions.height}
+          onInput={(value) =>
+            setPromptDialog((current) => (current ? { ...current, value, error: undefined } : current))
+          }
+          onSubmit={(value) => void submitPrompt(value)}
+        />
+      ) : null}
     </box>
   )
 }
 
-export async function runTui(options: RunTuiOptions): Promise<void> {
+function withLatestMessages(
+  rows: SessionRow[],
+  latestMessages: Record<string, { updated: number; text: string }>,
+): SessionRow[] {
+  return rows.map((row) => ({ ...row, latestMessage: latestMessages[row.id]?.text ?? row.latestMessage }))
+}
+
+export async function runTui(_options: RunTuiOptions): Promise<void> {
   let resolveDone = () => {}
   const done = new Promise<void>((resolve) => {
     resolveDone = resolve
@@ -202,7 +297,7 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
 
   const renderer = await createCliRenderer({
     exitOnCtrlC: false,
-    targetFps: 60,
+    targetFps: 30,
     useKittyKeyboard: {},
     useMouse: true,
     openConsoleOnError: true,
@@ -210,7 +305,12 @@ export async function runTui(options: RunTuiOptions): Promise<void> {
   })
 
   renderer.setBackgroundColor("#071018")
-  createRoot(renderer).render(<App {...options} startedAt={new Date()} />)
+  const queryClient = new QueryClient()
+  createRoot(renderer).render(
+    <QueryClientProvider client={queryClient}>
+      <App />
+    </QueryClientProvider>,
+  )
 
   await done
 }
