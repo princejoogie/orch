@@ -1,4 +1,5 @@
 import { TextAttributes } from "@opentui/core"
+import { mouseAction } from "./ui/button.tsx"
 import { fitCell, HintRow, PlainLine, SearchDialogFrame, TextLine } from "./ui/dialog.tsx"
 import { theme } from "../theme.ts"
 
@@ -8,6 +9,9 @@ export type ShortcutAction =
   | "prompt-selected-session"
   | "create-session"
   | "delete-selected-session"
+  | "start-visual-selection"
+  | "toggle-session-selection"
+  | "clear-session-selection"
   | "open-selected-in-tmux"
   | "move-selection-down"
   | "move-selection-up"
@@ -17,7 +21,10 @@ export type ShortcutAction =
   | "jump-to-bottom"
   | "next-project"
   | "previous-project"
-  | "select-project"
+  | "open-actions-menu"
+  | "open-selected-menu"
+  | "open-server-selector"
+  | "open-settings"
   | "focus-search"
   | "open-help"
   | "refresh-sessions"
@@ -37,9 +44,17 @@ type ShortcutRow =
   | { type: "spacer"; after: ShortcutScope }
 
 export const SHORTCUTS: readonly Shortcut[] = [
-  { scope: "Session", description: "Prompt selected session", shortcut: "enter", action: "prompt-selected-session" },
+  {
+    scope: "Session",
+    description: "Prompt session or toggle lane",
+    shortcut: "enter",
+    action: "prompt-selected-session",
+  },
   { scope: "Session", description: "Create new session", shortcut: "a", action: "create-session" },
-  { scope: "Session", description: "Delete selected session", shortcut: "d", action: "delete-selected-session" },
+  { scope: "Session", description: "Delete selected sessions", shortcut: "d", action: "delete-selected-session" },
+  { scope: "Session", description: "Toggle visual selection", shortcut: "v", action: "start-visual-selection" },
+  { scope: "Session", description: "Toggle session selection", shortcut: "space", action: "toggle-session-selection" },
+  { scope: "Session", description: "Clear session selection", shortcut: "esc", action: "clear-session-selection" },
   { scope: "Session", description: "Open selected in tmux", shortcut: "o", action: "open-selected-in-tmux" },
   { scope: "Navigation", description: "Move selection down", shortcut: "j / down", action: "move-selection-down" },
   { scope: "Navigation", description: "Move selection up", shortcut: "k / up", action: "move-selection-up" },
@@ -49,7 +64,10 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { scope: "Navigation", description: "Jump to bottom", shortcut: "G / end", action: "jump-to-bottom" },
   { scope: "Projects", description: "Next project", shortcut: "tab", action: "next-project" },
   { scope: "Projects", description: "Previous project", shortcut: "shift-tab", action: "previous-project" },
-  { scope: "Projects", description: "Select project", shortcut: "1-9", action: "select-project" },
+  { scope: "App", description: "Open actions menu", shortcut: "1", action: "open-actions-menu" },
+  { scope: "App", description: "Open selected menu", shortcut: "2", action: "open-selected-menu" },
+  { scope: "App", description: "Open server selector", shortcut: "ctrl-s", action: "open-server-selector" },
+  { scope: "App", description: "Open settings", shortcut: "ctrl-p", action: "open-settings" },
   { scope: "App", description: "Focus search", shortcut: "/", action: "focus-search" },
   { scope: "App", description: "Open this help", shortcut: "?", action: "open-help" },
   { scope: "App", description: "Refresh sessions", shortcut: "r", action: "refresh-sessions" },
@@ -78,10 +96,16 @@ export function ShortcutsDialog({
   width,
   height,
   selectedIndex,
+  onSelect,
+  onRun,
+  onClose,
 }: {
   width: number
   height: number
   selectedIndex: number
+  onSelect: (index: number) => void
+  onRun: (action: ShortcutAction) => void
+  onClose: () => void
 }) {
   const rows = buildShortcutRows(selectedIndex)
   const dialogWidth = Math.min(Math.max(52, Math.floor(width * 0.55)), 78, width - 4)
@@ -103,6 +127,7 @@ export function ShortcutsDialog({
       query=""
       placeholder="Keyboard"
       countText={`${SHORTCUTS.length} commands`}
+      onClose={onClose}
       footer={
         <HintRow
           items={[
@@ -118,7 +143,15 @@ export function ShortcutsDialog({
         if (row.type === "spacer") return <PlainLine key={`spacer-${row.after}`} text="" />
         if (row.type === "section")
           return <ShortcutSection key={`section-${row.scope}`} title={row.scope} width={rowWidth} />
-        return <ShortcutLine key={row.shortcut.description} row={row} width={rowWidth} />
+        return (
+          <ShortcutLine
+            key={row.shortcut.description}
+            row={row}
+            width={rowWidth}
+            onSelect={() => onSelect(SHORTCUTS.indexOf(row.shortcut))}
+            onRun={() => onRun(row.shortcut.action)}
+          />
+        )
       })}
       {Array.from({ length: bottomPaddingRows }, (_, index) => (
         <PlainLine key={`pad-${index}`} text="" />
@@ -131,23 +164,43 @@ function ShortcutSection({ title, width }: { title: string; width: number }) {
   return <PlainLine text={fitCell(`  ${title.toUpperCase()}`, width)} fg={theme.textMuted} />
 }
 
-function ShortcutLine({ row, width }: { row: Extract<ShortcutRow, { type: "shortcut" }>; width: number }) {
+function ShortcutLine({
+  row,
+  width,
+  onSelect,
+  onRun,
+}: {
+  row: Extract<ShortcutRow, { type: "shortcut" }>
+  width: number
+  onSelect: () => void
+  onRun: () => void
+}) {
   const selectorWidth = 2
   const shortcutWidth = Math.min(20, Math.max(10, Math.floor(width * 0.34)))
   const titleWidth = Math.max(8, width - selectorWidth - shortcutWidth - 2)
   const bg = row.selected ? theme.backgroundElement : undefined
 
   return (
-    <TextLine width={width} bg={bg}>
-      <span fg={row.selected ? theme.primary : theme.textMuted}>{row.selected ? "▸" : " "}</span>
-      <span> </span>
-      <span {...(row.selected ? { attributes: TextAttributes.BOLD } : {})}>
-        {fitCell(row.shortcut.description, titleWidth)}
-      </span>
-      <span fg={row.selected ? theme.primary : theme.textMuted}>
-        {fitCell(row.shortcut.shortcut, shortcutWidth, "right")}
-      </span>
-      <span> </span>
-    </TextLine>
+    <box
+      style={{ height: 1, width }}
+      onMouseDown={(event) => {
+        mouseAction(event)
+        onSelect()
+        onRun()
+      }}
+      onMouseOver={onSelect}
+    >
+      <TextLine width={width} bg={bg}>
+        <span fg={row.selected ? theme.primary : theme.textMuted}>{row.selected ? "▸" : " "}</span>
+        <span> </span>
+        <span {...(row.selected ? { attributes: TextAttributes.BOLD } : {})}>
+          {fitCell(row.shortcut.description, titleWidth)}
+        </span>
+        <span fg={row.selected ? theme.primary : theme.textMuted}>
+          {fitCell(row.shortcut.shortcut, shortcutWidth, "right")}
+        </span>
+        <span> </span>
+      </TextLine>
+    </box>
   )
 }

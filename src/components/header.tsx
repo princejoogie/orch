@@ -1,9 +1,20 @@
 import { TextAttributes } from "@opentui/core"
-import { countLane, truncate } from "../lib/utils.ts"
+import { mouseAction } from "./ui/button.tsx"
+import { countLane, shortcutHintLine } from "../lib/utils.ts"
 import type { DashboardSnapshot } from "../opencode.ts"
 import { theme } from "../theme.ts"
 
-export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot | undefined; width: number }) {
+export function Header({
+  snapshot,
+  width,
+  active,
+  onServerPress,
+}: {
+  snapshot?: DashboardSnapshot | undefined
+  width: number
+  active?: boolean | undefined
+  onServerPress: () => void
+}) {
   const rows = snapshot?.rows ?? []
   const now = Date.now()
   const serverUrl = snapshot?.serverUrl ?? "http://localhost:4096"
@@ -16,7 +27,18 @@ export function Header({ snapshot, width }: { snapshot?: DashboardSnapshot | und
         width,
       }}
     >
-      <text content={truncate(serverUrl, width)} style={{ fg: theme.textMuted }} />
+      <box
+        style={{ height: 1, width }}
+        onMouseDown={(event) => {
+          mouseAction(event)
+          onServerPress()
+        }}
+      >
+        <text
+          content={shortcutHintLine(serverUrl, "[^s]", width)}
+          style={{ fg: active ? theme.text : theme.textMuted, ...(active ? { attributes: TextAttributes.BOLD } : {}) }}
+        />
+      </box>
       <text content={`${rows.length} sessions`} style={{ fg: theme.text, marginTop: 1 }} />
       <text content={`${countLane(rows, "working", now)} working`} style={{ fg: theme.warning }} />
       <text content={`${countLane(rows, "needs-input", now)} needs input`} style={{ fg: theme.info }} />

@@ -1,11 +1,16 @@
 import { type InputRenderable } from "@opentui/core"
-import { useRef } from "react"
+import { useEffect, useRef } from "react"
 import type { SearchInputProps } from "../../lib/utils.ts"
 import { theme } from "../../theme.ts"
 
-export function SearchInput({ value, focused, width, onInput, onFocus }: SearchInputProps) {
+export function SearchInput({ value, focused, width, clearVersion, onInput, onFocus }: SearchInputProps) {
   const inputRef = useRef<InputRenderable>(null)
   const inputWidth = Math.min(44, Math.max(16, width))
+
+  useEffect(() => {
+    const input = inputRef.current
+    if (input && input.plainText.length > 0) input.setText("")
+  }, [clearVersion])
 
   return (
     <box style={{ flexDirection: "row", flexShrink: 0 }}>
@@ -22,11 +27,10 @@ export function SearchInput({ value, focused, width, onInput, onFocus }: SearchI
       >
         <input
           ref={inputRef}
-          value={value}
           focused={focused}
           placeholder="Search sessions"
           style={{ width: inputWidth - 4 }}
-          onInput={(nextValue) => onInput(nextValue)}
+          onInput={onInput}
         />
       </box>
     </box>

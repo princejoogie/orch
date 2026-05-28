@@ -12,20 +12,20 @@ Every piece of behavior should have one owner.
 - Session API access is owned by the opencode client/snapshot modules.
 - Shared UI frame behavior is owned by `src/components/ui/dialog.tsx`.
 
-Do not duplicate ownership with a second ad hoc handler or local workaround.
+When behavior needs to change, update the owning module instead of adding a second local path for the same responsibility.
 
 ## Prefer Small, Named Modules
 
 Split code by responsibility, not by convenience.
 
-- Put session-specific dialogs in `session-dialogs.tsx`.
-- Put shortcut/help UI in `shortcuts-dialog.tsx`.
-- Put reusable modal primitives in `ui/dialog.tsx`.
+- Dialogs live with the feature or app surface whose behavior they represent.
+- Shortcut/help UI lives with command metadata.
+- Reusable modal primitives live in UI modules.
 - Put pure reusable logic in `src/lib/`.
 - Put React lifecycle helpers in `src/hooks/`.
 - Put keyboard routing in `src/keymap/`.
 
-If a file name says “session”, it should not contain app-wide shortcut data.
+File ownership should match the behavior named by the file. App-wide data belongs in app-wide surfaces, not in a feature module that only happens to need a nearby UI primitive.
 
 ## Keep Pure Logic Testable
 
@@ -48,14 +48,14 @@ Follow these rules:
 - Omit optional fields instead of setting them to `undefined` in object literals.
 - Check indexed lookups before use, or use an explicit fallback.
 - Keep state types honest: if a value may be `undefined`, say so in the type.
-- Do not weaken compiler settings to avoid fixing call sites.
+- Keep compiler settings strict and fix call sites when the types expose an unsafe assumption.
 
 ## Minimal Correct Changes
 
 Prefer the smallest change that fixes the behavior and preserves conventions.
 
-- Do not add compatibility layers unless there is a real consumer.
-- Do not add a new abstraction for a one-off branch.
+- Compatibility layers need a real consumer.
+- New abstractions should serve repeated behavior or a clear ownership boundary.
 - Do extract a module when a file is taking on a different responsibility.
 
 ## Async And Errors
@@ -69,7 +69,7 @@ For dialogs:
 - keep the dialog open on failure
 - show the failure in the dialog footer/body
 
-Do not log recoverable dialog failures only to the console.
+Recoverable dialog failures should be visible in the UI that can recover from them.
 
 ## User-Facing Commands
 

@@ -57,9 +57,14 @@ export function SectionView({
   worktreeColors,
   selection,
   active,
+  collapsed,
   width,
   hoveredRowId,
+  selectedSessionIds,
+  multiSelectActive,
   onRowHover,
+  onHeaderSelect,
+  onHeaderClick,
   onRowSelect,
   onRowClick,
 }: {
@@ -68,39 +73,69 @@ export function SectionView({
   worktreeColors: Record<string, string>
   selection: Selection
   active: boolean
+  collapsed: boolean
   width: number
   hoveredRowId?: string | undefined
+  selectedSessionIds: ReadonlySet<string>
+  multiSelectActive: boolean
   onRowHover: (rowId: string | undefined) => void
+  onHeaderSelect: () => void
+  onHeaderClick: () => void
   onRowSelect: (selection: Selection) => void
   onRowClick: (row: SessionRow) => void
 }) {
+  const headerSelected = active && selection.type === "section"
+  const headerContent = `${headerSelected ? "> " : "  "}${collapsed ? "+" : "-"} ${section.title}`
+
   return (
     <box style={{ flexDirection: "column", marginBottom: 1, width }}>
       <box
         id={sectionElementId(section.status)}
-        style={{ flexDirection: "row", flexWrap: "no-wrap", height: 1, marginBottom: 1, overflow: "hidden", width }}
+        style={{
+          flexDirection: "row",
+          flexWrap: "no-wrap",
+          height: 1,
+          overflow: "hidden",
+          width,
+          ...(headerSelected ? { backgroundColor: theme.backgroundElement } : {}),
+        }}
+        onMouseDown={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          onHeaderSelect()
+        }}
       >
-        <text
-          content={`${active ? "> " : "  "}${section.title}`}
-          style={{ fg: theme.text, attributes: TextAttributes.BOLD }}
-        />
+        <box
+          style={{ flexDirection: "row", flexWrap: "no-wrap", height: 1, width: headerContent.length }}
+          onMouseDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            onHeaderSelect()
+            onHeaderClick()
+          }}
+        >
+          <text content={headerContent} style={{ fg: theme.text, attributes: TextAttributes.BOLD }} />
+        </box>
         <text content={` ${rows.length}`} style={{ fg: theme.textMuted }} />
       </box>
-      {rows.length === 0 ? <text content="  none" style={{ fg: theme.border }} /> : null}
-      {rows.map((row, index) => (
-        <SessionItem
-          key={row.id}
-          row={row}
-          section={section}
-          selected={active && selection.index === index}
-          hovered={hoveredRowId === row.id}
-          worktreeColors={worktreeColors}
-          width={width}
-          onHover={(hovered) => onRowHover(hovered ? row.id : undefined)}
-          onSelect={() => onRowSelect({ section: section.status, index })}
-          onClick={() => onRowClick(row)}
-        />
-      ))}
+      {!collapsed && rows.length === 0 ? <text content="  none" style={{ fg: theme.border }} /> : null}
+      {!collapsed &&
+        rows.map((row, index) => (
+          <SessionItem
+            key={row.id}
+            row={row}
+            section={section}
+            selected={active && selection.type === "row" && selection.index === index && selection.sessionId === row.id}
+            hovered={hoveredRowId === row.id}
+            checked={selectedSessionIds.has(row.id)}
+            multiSelectActive={multiSelectActive}
+            worktreeColors={worktreeColors}
+            width={width}
+            onHover={(hovered) => onRowHover(hovered ? row.id : undefined)}
+            onSelect={() => onRowSelect({ type: "row", section: section.status, index, sessionId: row.id })}
+            onClick={() => onRowClick(row)}
+          />
+        ))}
     </box>
   )
 }
@@ -110,6 +145,8 @@ function SessionItem({
   section,
   selected,
   hovered,
+  checked,
+  multiSelectActive,
   worktreeColors,
   width,
   onHover,
@@ -120,6 +157,8 @@ function SessionItem({
   section: Section
   selected: boolean
   hovered: boolean
+  checked: boolean
+  multiSelectActive: boolean
   worktreeColors: Record<string, string>
   width: number
   onHover: (hovered: boolean) => void
@@ -150,7 +189,10 @@ function SessionItem({
       onMouseOver={() => onHover(true)}
       onMouseOut={() => onHover(false)}
     >
-      <text content={`${sectionMarker(section, now)} `} style={{ fg: sectionMarkerColor(section.status) }} />
+      <text
+        content={multiSelectActive ? `${checked ? "☑" : "☐"} ` : `${sectionMarker(section, now)} `}
+        style={{ fg: multiSelectActive && checked ? theme.primary : sectionMarkerColor(section.status) }}
+      />
       <text
         content={truncate(row.title, titleWidth).padEnd(titleWidth)}
         style={{ fg: theme.text, ...(selected ? { attributes: TextAttributes.BOLD } : {}) }}

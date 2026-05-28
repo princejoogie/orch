@@ -4,14 +4,20 @@ import type { DashboardSnapshot, SessionRow, SessionStatus } from "./types.ts"
 
 export const ACTIVE_SESSION_WINDOW_MS = 24 * 60 * 60 * 1000
 
-export async function getSessions(options: { limit?: number } = {}): Promise<DashboardSnapshot> {
-  const serverUrl = opencodeServerUrl()
+export async function getSessions(
+  options: { limit?: number; serverUrl?: string | undefined } = {},
+): Promise<DashboardSnapshot> {
+  const serverUrl = options.serverUrl ?? opencodeServerUrl()
+  const client = opencodeClient(serverUrl)
   const since = Date.now() - ACTIVE_SESSION_WINDOW_MS
-  const sessions = await opencodeClient.experimental.session.list(
+  const sessions = await client.experimental.session.list(
     { archived: false, limit: options.limit ?? DEFAULT_LIMIT, start: since },
     { throwOnError: true },
   )
-  const [statuses, details] = await Promise.all([loadStatuses(sessions.data), loadSessionDetails(sessions.data)])
+  const [statuses, details] = await Promise.all([
+    loadStatuses(sessions.data, serverUrl),
+    loadSessionDetails(sessions.data, serverUrl),
+  ])
 
   return {
     rows: sessions.data.map((session) =>
@@ -26,7 +32,8 @@ export async function getSessions(options: { limit?: number } = {}): Promise<Das
 type StatusMap = Record<string, OpencodeSessionStatus>
 type SessionDetails = Pick<SessionRow, "latestMessage" | "latestUserMessage" | "contextTokens" | "contextPercent">
 
-async function loadStatuses(sessions: GlobalSession[]): Promise<Map<string, StatusMap>> {
+async function loadStatuses(sessions: GlobalSession[], serverUrl: string): Promise<Map<string, StatusMap>> {
+  const client = opencodeClient(serverUrl)
   const routes = new Map<string, { directory: string; workspaceID?: string | undefined }>()
   for (const session of sessions) {
     routes.set(routeKey(session), {
@@ -38,7 +45,7 @@ async function loadStatuses(sessions: GlobalSession[]): Promise<Map<string, Stat
   const entries = await Promise.all(
     [...routes.entries()].map(async ([key, route]) => {
       try {
-        const result = await opencodeClient.session.status(
+        const result = await client.session.status(
           { directory: route.directory, ...(route.workspaceID !== undefined ? { workspace: route.workspaceID } : {}) },
           { throwOnError: true },
         )
@@ -52,18 +59,20 @@ async function loadStatuses(sessions: GlobalSession[]): Promise<Map<string, Stat
   return new Map(entries)
 }
 
-async function loadSessionDetails(sessions: GlobalSession[]): Promise<Map<string, SessionDetails>> {
+async function loadSessionDetails(sessions: GlobalSession[], serverUrl: string): Promise<Map<string, SessionDetails>> {
   const entries = await Promise.all(
     sessions.map(async (session): Promise<readonly [string, SessionDetails]> => {
       try {
         const messages = await loadLatestMessages({
           sessionID: session.id,
           directory: session.directory,
+          serverUrl,
           ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
         })
         const context = await loadContextUsage({
           sessionID: session.id,
           directory: session.directory,
+          serverUrl,
           ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
           ...(messages.assistantInfo !== undefined ? { historyAssistantMessage: messages.assistantInfo } : {}),
         }).catch((): { tokens?: number; percent?: number } => ({}))

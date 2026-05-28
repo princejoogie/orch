@@ -18,12 +18,20 @@ const DashboardStoreContext = createContext<StoreApi<DashboardStore> | undefined
 
 function createDashboardStore() {
   return createStore<DashboardStore>((set) => ({
-    selection: { section: "working", index: 0 },
+    selection: { type: "section", section: "working", index: 0 },
     searchValue: "",
     searchFocused: false,
     setActiveTabId: (activeTabId) => set({ activeTabId }),
     setSelection: (selection) =>
-      set((state) => ({ selection: typeof selection === "function" ? selection(state.selection) : selection })),
+      set((state) => {
+        const next = typeof selection === "function" ? selection(state.selection) : selection
+        return state.selection.section === next.section &&
+          state.selection.type === next.type &&
+          state.selection.index === next.index &&
+          state.selection.sessionId === next.sessionId
+          ? state
+          : { selection: next }
+      }),
     setSearchValue: (searchValue) => set({ searchValue }),
     setSearchFocused: (searchFocused) => set({ searchFocused }),
   }))

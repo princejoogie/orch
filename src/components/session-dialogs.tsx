@@ -9,6 +9,7 @@ import {
   PlainLine,
   StandardDialogFrame,
 } from "./ui/dialog.tsx"
+import { Button, ButtonRow, ButtonSpacer, DialogFooterActions } from "./ui/button.tsx"
 import {
   clamp,
   truncate,
@@ -25,12 +26,16 @@ export function PromptDialog({
   height,
   onInput,
   onSubmit,
+  onCancel,
+  clearVersion,
 }: {
   state: PromptDialogState
   width: number
   height: number
   onInput: (value: string) => void
   onSubmit: (value: string) => void
+  onCancel: () => void
+  clearVersion: number
 }) {
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
@@ -54,17 +59,27 @@ export function PromptDialog({
       height={dialogHeight}
       danger={Boolean(state.error)}
       title="Prompt session"
-      headerRight={state.sending ? "sending" : "enter send"}
+      headerRight={state.sending ? "sending" : undefined}
       subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={onCancel}
       footer={
-        <HintRow
-          items={[
-            { key: "enter", label: "send" },
-            { key: "ctrl-s", label: "send" },
-            { key: "shift-enter", label: "newline" },
-            { key: "esc", label: "cancel" },
-          ]}
-        />
+        <DialogFooterActions
+          width={dialogWidth - 4}
+          actionsWidth={25}
+          hints={<HintRow items={[{ key: "shift-enter", label: "newline" }]} />}
+        >
+          <ButtonRow width={25}>
+            <Button
+              label="Send"
+              shortcut="↵"
+              width={10}
+              disabled={state.sending || state.value.trim().length === 0}
+              onPress={() => onSubmit(state.value)}
+            />
+            <ButtonSpacer />
+            <Button label="Cancel" shortcut="esc" width={14} onPress={onCancel} />
+          </ButtonRow>
+        </DialogFooterActions>
       }
     >
       <DialogLabel>User:</DialogLabel>
@@ -76,6 +91,7 @@ export function PromptDialog({
         placeholder={state.sending ? "Sending..." : "Type prompt"}
         focused={!state.sending}
         height={inputHeight}
+        clearVersion={clearVersion}
         onInput={onInput}
         onSubmit={onSubmit}
       />
@@ -91,6 +107,8 @@ export function AddSessionDialog({
   onInput,
   onSubmit,
   onWorktreeSelect,
+  onCancel,
+  clearVersion,
 }: {
   state: AddSessionDialogState
   width: number
@@ -98,6 +116,8 @@ export function AddSessionDialog({
   onInput: (value: string) => void
   onSubmit: (value: string) => void
   onWorktreeSelect: (index: number) => void
+  onCancel: () => void
+  clearVersion: number
 }) {
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
@@ -119,18 +139,34 @@ export function AddSessionDialog({
       height={dialogHeight}
       danger={Boolean(state.error)}
       title="New session"
-      headerRight={state.sending ? "creating" : "enter create"}
+      headerRight={state.sending ? "creating" : undefined}
       subtitle={<PlainLine text={fitCell(state.projectTitle, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={onCancel}
       footer={
-        <HintRow
-          items={[
-            { key: "tab", label: "worktree" },
-            { key: "click", label: "select" },
-            { key: "enter", label: "create" },
-            { key: "shift-enter", label: "newline" },
-            { key: "esc", label: "cancel" },
-          ]}
-        />
+        <DialogFooterActions
+          width={dialogWidth - 4}
+          actionsWidth={27}
+          hints={
+            <HintRow
+              items={[
+                { key: "tab", label: "worktree" },
+                { key: "shift-enter", label: "newline" },
+              ]}
+            />
+          }
+        >
+          <ButtonRow width={27}>
+            <Button
+              label="Create"
+              shortcut="↵"
+              width={12}
+              disabled={state.sending || state.value.trim().length === 0}
+              onPress={() => onSubmit(state.value)}
+            />
+            <ButtonSpacer />
+            <Button label="Cancel" shortcut="esc" width={14} onPress={onCancel} />
+          </ButtonRow>
+        </DialogFooterActions>
       }
     >
       <DialogLabel>Worktree</DialogLabel>
@@ -153,6 +189,7 @@ export function AddSessionDialog({
         placeholder={state.sending ? "Creating..." : "Type first prompt"}
         focused={!state.sending}
         height={inputHeight}
+        clearVersion={clearVersion}
         onInput={onInput}
         onSubmit={onSubmit}
       />
@@ -165,14 +202,23 @@ export function DeleteSessionDialog({
   state,
   width,
   height,
+  onConfirm,
+  onCancel,
 }: {
   state: DeleteSessionDialogState
   width: number
   height: number
+  onConfirm: () => void
+  onCancel: () => void
 }) {
-  const dialogWidth = Math.min(Math.max(44, Math.floor(width * 0.55)), 72, width - 4)
+  const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.55)), 72, width - 4)
   const bodyHeight = state.error ? 4 : 3
   const dialogHeight = bodyHeight + 7
+  const count = state.rows.length
+  const firstRow = state.rows[0]
+  const title = count === 1 ? "Delete session?" : `Delete ${count} sessions?`
+  const subtitle = count === 1 && firstRow ? firstRow.title : `${count} selected sessions`
+  const worktree = count === 1 && firstRow ? firstRow.worktreeName : "Multiple worktrees may be affected."
 
   return (
     <StandardDialogFrame
@@ -181,20 +227,29 @@ export function DeleteSessionDialog({
       width={dialogWidth}
       height={dialogHeight}
       danger
-      title="Delete session?"
+      title={title}
       headerRight={state.deleting ? "deleting" : "destructive"}
-      subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
+      subtitle={<PlainLine text={fitCell(subtitle, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={onCancel}
       footer={
-        <HintRow
-          items={[
-            { key: "enter/y", label: "confirm" },
-            { key: "esc/n", label: "cancel" },
-          ]}
-        />
+        <DialogFooterActions width={dialogWidth - 4} actionsWidth={33}>
+          <ButtonRow width={33}>
+            <Button
+              label="Delete"
+              shortcut="↵/y"
+              width={14}
+              danger
+              disabled={Boolean(state.deleting)}
+              onPress={onConfirm}
+            />
+            <ButtonSpacer />
+            <Button label="Cancel" shortcut="esc/n" width={18} disabled={Boolean(state.deleting)} onPress={onCancel} />
+          </ButtonRow>
+        </DialogFooterActions>
       }
     >
-      <PlainLine text={fitCell(state.row.worktreeName, dialogWidth - 6)} fg={theme.textMuted} />
-      <PlainLine text={state.deleting ? "Deleting session..." : "This cannot be undone."} fg={theme.error} />
+      <PlainLine text={fitCell(worktree, dialogWidth - 6)} fg={theme.textMuted} />
+      <PlainLine text={state.deleting ? "Deleting sessions..." : "This cannot be undone."} fg={theme.error} />
       <DialogError error={state.error} width={dialogWidth} />
     </StandardDialogFrame>
   )

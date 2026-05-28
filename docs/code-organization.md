@@ -9,6 +9,7 @@ This document defines where code belongs.
 - `src/components/ui/`: generic visual primitives with no feature ownership.
 - `src/hooks/`: React hooks that encapsulate lifecycle or renderer/ref behavior.
 - `src/keymap/`: keyboard parsing, dispatch, adapters, and app keymaps.
+- `src/config/`: orch config/state file paths, JSON persistence, and config normalization.
 - `src/lib/`: pure utilities and domain-agnostic helpers.
 - `src/opencode/`: opencode API client, snapshot loading, and related types.
 - `scripts/`: build, release, smoke, and maintenance scripts.
@@ -18,7 +19,7 @@ This document defines where code belongs.
 
 `src/pages/dashboard.tsx` is allowed to compose state, data, keymap contexts, and layout.
 
-It should not own low-level implementations for:
+Low-level behavior belongs in focused modules:
 
 - key parsing
 - scroll math
@@ -26,7 +27,7 @@ It should not own low-level implementations for:
 - opencode request details
 - shortcut metadata rendering
 
-Move those to the appropriate module.
+Page components compose those modules rather than reimplementing them locally.
 
 ## Component Boundaries
 
@@ -38,7 +39,7 @@ Examples:
 - `shortcuts-dialog.tsx` contains shortcut metadata and shortcut rendering.
 - `session-table.tsx` contains session list/table rows and sections.
 
-If a component file starts accumulating unrelated app-wide concerns, split it.
+Component files should have cohesive product ownership. When a component begins combining unrelated features or app-wide data, split the behavior by the owner that changes with it.
 
 ## UI Primitives
 
@@ -51,7 +52,7 @@ If a component file starts accumulating unrelated app-wide concerns, split it.
 - textarea wrappers
 - generic option rows
 
-It should not own feature data like session labels, shortcuts, or command definitions.
+Feature data like session labels, shortcuts, and command definitions belongs to the feature or command surface that owns the user-facing behavior.
 
 ## Keymaps
 
@@ -60,9 +61,11 @@ Keymap code has two layers:
 - generic dispatch engine in `src/keymap/*.ts`
 - app-specific bindings in `src/keymap/dashboard.ts`
 
-Do not mix dashboard actions into generic keymap files.
+Generic keymap files stay reusable by modeling parsing and dispatch. Dashboard actions live in the app-specific keymap layer that has access to dashboard state.
 
 ## Data Layer
+
+`src/config/orch.ts` owns persisted orch configuration. Config is stored at `~/.config/orch/config.json`; generic app state helpers write below `~/.local/state/orch`.
 
 `src/opencode/client.ts` owns low-level API calls.
 
@@ -78,4 +81,4 @@ Tests should mirror module ownership.
 - Scroll behavior belongs in scroll tests.
 - Utility behavior belongs in utility tests.
 
-Avoid snapshot-testing terminal output unless the rendered text itself is the behavior under test.
+Terminal output tests are most useful when the rendered text itself is the behavior under test; otherwise test the pure behavior behind the rendering.

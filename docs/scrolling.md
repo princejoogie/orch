@@ -4,7 +4,7 @@ Selection is app-owned and scroll follows selection only when the cursor reaches
 
 ## Core Rule
 
-The list scrollbox in `src/pages/dashboard.tsx` must remain:
+Selectable lists with app-owned navigation render their scrollbox without renderer focus:
 
 ```tsx
 <scrollbox focusable={false} ... />
@@ -45,7 +45,9 @@ useScrollFollowSelected(scrollRef, selectedLine, margin)
 
 The dashboard computes a logical row index, not a child renderable coordinate.
 
-Do not use `findDescendantById(...).y` for list follow scrolling. Logical row index + `scrollTopForVisibleLine` is more stable under culling, padding, and layout changes.
+List follow scrolling uses logical row indexes. Logical row index + `scrollTopForVisibleLine` is stable under culling, padding, and layout changes because it does not depend on child renderable coordinates.
+
+The selected entry can be a lane title or a session row. Selected sessions are anchored by the session `id` returned from opencode. When polling or activity changes reorder rows, the dashboard resolves that `id` back to the row's current section and index before rendering selection or computing the selected line. Collapsed lanes keep their title selectable and omit hidden session rows from the logical line count.
 
 ## Wheel Scrolling
 
@@ -53,7 +55,7 @@ Mouse wheel remains scrollbox-owned.
 
 - Wheel scroll can move the viewport without changing selection.
 - The next keyboard selection change will reassert selected-row visibility.
-- Do not sync selection to wheel movement unless we intentionally add pointer-driven selection.
+- Selection follows explicit keyboard or pointer selection actions; wheel movement alone changes only the viewport.
 
 ## Tests
 

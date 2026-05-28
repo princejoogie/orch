@@ -1,5 +1,6 @@
 import { TextAttributes, type KeyBinding, type MouseEvent, type TextareaRenderable } from "@opentui/core"
-import { useRef, type ReactNode } from "react"
+import { useEffect, useRef, type ReactNode } from "react"
+import { mouseAction } from "./button.tsx"
 import { truncate, type WrappedLine } from "../../lib/utils.ts"
 import { theme } from "../../theme.ts"
 
@@ -18,7 +19,6 @@ const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
   { name: "kpenter", action: "submit" },
   { name: "linefeed", action: "submit" },
-  { name: "s", ctrl: true, action: "submit" },
   { name: "return", shift: true, action: "newline" },
   { name: "kpenter", shift: true, action: "newline" },
   { name: "linefeed", shift: true, action: "newline" },
@@ -103,6 +103,35 @@ export function PaddedRow({ children }: { children: ReactNode }) {
   return <box style={{ height: 1, paddingLeft: 1, paddingRight: 1 }}>{children}</box>
 }
 
+export function MouseDismissLayer({
+  screenWidth,
+  screenHeight,
+  top = 0,
+  onDismiss,
+}: {
+  screenWidth: number
+  screenHeight: number
+  top?: number
+  onDismiss: () => void
+}) {
+  return (
+    <box
+      style={{
+        position: "absolute",
+        zIndex: 19,
+        left: 0,
+        top,
+        width: screenWidth,
+        height: Math.max(0, screenHeight - top),
+      }}
+      onMouseDown={(event) => {
+        mouseAction(event)
+        onDismiss()
+      }}
+    />
+  )
+}
+
 export function ModalFrame({
   children,
   left,
@@ -111,6 +140,7 @@ export function ModalFrame({
   height,
   junctionRows = [],
   topJunctionColumns = [],
+  onClose,
 }: {
   children: ReactNode
   left: number
@@ -119,6 +149,7 @@ export function ModalFrame({
   height: number
   junctionRows?: readonly number[]
   topJunctionColumns?: readonly number[]
+  onClose?: (() => void) | undefined
 }) {
   const innerWidth = Math.max(1, width - 2)
   const innerHeight = Math.max(1, height - 2)
@@ -138,8 +169,20 @@ export function ModalFrame({
         flexDirection: "column",
         backgroundColor: DIALOG_BACKGROUND,
       }}
+      onMouseDown={mouseAction}
     >
       <PlainLine text={`┌${topBorder}┐`} fg={DIALOG_SEPARATOR} />
+      {onClose ? (
+        <box
+          style={{ position: "absolute", zIndex: 21, left: Math.max(1, width - 9), top: 0, height: 1, width: 8 }}
+          onMouseDown={(event) => {
+            mouseAction(event)
+            onClose()
+          }}
+        >
+          <text content="[x] esc" style={{ fg: DIALOG_DANGER, attributes: TextAttributes.BOLD }} />
+        </box>
+      ) : null}
       <box style={{ height: innerHeight, flexDirection: "row" }}>
         <box style={{ width: 1, height: innerHeight, flexDirection: "column" }}>
           {Array.from({ length: innerHeight }, (_, index) => (
@@ -197,6 +240,7 @@ export function SearchDialogFrame({
   placeholder,
   countText,
   footer,
+  onClose,
   onBodyMouseScroll,
   children,
 }: {
@@ -209,6 +253,7 @@ export function SearchDialogFrame({
   placeholder: string
   countText: string
   footer: ReactNode
+  onClose?: (() => void) | undefined
   onBodyMouseScroll?: (event: MouseEvent) => void
   children: ReactNode
 }) {
@@ -224,37 +269,41 @@ export function SearchDialogFrame({
   const queryText = query ? fitCell(query, searchWidth) : fitCell(placeholder, searchWidth)
 
   return (
-    <ModalFrame
-      left={left}
-      top={top}
-      width={width}
-      height={height}
-      junctionRows={[1, height - 4]}
-      topJunctionColumns={[dividerColumn]}
-    >
-      <PaddedRow>
-        <TextLine>
-          <span fg={DIALOG_COUNT} attributes={TextAttributes.BOLD}>
-            {titleText}
-          </span>
-          <span> </span>
-          <span fg={DIALOG_SEPARATOR}>{headerDivider}</span>
-          <span> </span>
-          <span fg={query ? DIALOG_TEXT : DIALOG_MUTED}>{queryText}</span>
-          <span> </span>
-          <span fg={DIALOG_MUTED}>{countText}</span>
-        </TextLine>
-      </PaddedRow>
-      <Divider width={innerWidth} junctionAt={dividerColumn} junctionChar="┴" />
-      <box
-        style={{ height: bodyHeight, flexDirection: "column" }}
-        {...(onBodyMouseScroll ? { onMouseScroll: onBodyMouseScroll } : {})}
+    <>
+      {onClose ? <MouseDismissLayer screenWidth={screenWidth} screenHeight={screenHeight} onDismiss={onClose} /> : null}
+      <ModalFrame
+        left={left}
+        top={top}
+        width={width}
+        height={height}
+        junctionRows={[1, height - 4]}
+        topJunctionColumns={[dividerColumn]}
+        onClose={onClose}
       >
-        {children}
-      </box>
-      <Divider width={innerWidth} />
-      <PaddedRow>{footer}</PaddedRow>
-    </ModalFrame>
+        <PaddedRow>
+          <TextLine>
+            <span fg={DIALOG_COUNT} attributes={TextAttributes.BOLD}>
+              {titleText}
+            </span>
+            <span> </span>
+            <span fg={DIALOG_SEPARATOR}>{headerDivider}</span>
+            <span> </span>
+            <span fg={query ? DIALOG_TEXT : DIALOG_MUTED}>{queryText}</span>
+            <span> </span>
+            <span fg={DIALOG_MUTED}>{countText}</span>
+          </TextLine>
+        </PaddedRow>
+        <Divider width={innerWidth} junctionAt={dividerColumn} junctionChar="┴" />
+        <box
+          style={{ height: bodyHeight, flexDirection: "column" }}
+          {...(onBodyMouseScroll ? { onMouseScroll: onBodyMouseScroll } : {})}
+        >
+          {children}
+        </box>
+        <Divider width={innerWidth} />
+        <PaddedRow>{footer}</PaddedRow>
+      </ModalFrame>
+    </>
   )
 }
 
@@ -273,6 +322,7 @@ export function StandardDialogFrame({
   subtitle,
   middleRow,
   footer,
+  onClose,
   bodyPadding = 1,
   children,
 }: {
@@ -286,6 +336,7 @@ export function StandardDialogFrame({
   subtitle: ReactNode
   middleRow?: ReactNode
   footer: ReactNode
+  onClose?: (() => void) | undefined
   bodyPadding?: number
   children: ReactNode
 }) {
@@ -300,34 +351,39 @@ export function StandardDialogFrame({
   const junctionRows = hasMiddleRow ? [2, 4, height - 4] : [2, height - 4]
 
   return (
-    <ModalFrame left={left} top={top} width={width} height={height} junctionRows={junctionRows}>
-      <PaddedRow>
-        <TextLine>
-          <span fg={danger ? DIALOG_DANGER : DIALOG_COUNT} attributes={TextAttributes.BOLD}>
-            {title}
-          </span>
-          {headerRight ? (
-            <>
-              <span>{" ".repeat(headerGap)}</span>
-              <span fg={DIALOG_MUTED}>{headerRight}</span>
-            </>
-          ) : null}
-        </TextLine>
-      </PaddedRow>
-      <PaddedRow>{subtitle}</PaddedRow>
-      <Divider width={innerWidth} />
-      {hasMiddleRow ? (
-        <>
-          <PaddedRow>{middleRow}</PaddedRow>
-          <Divider width={innerWidth} />
-        </>
-      ) : null}
-      <box style={{ height: bodyHeight, flexDirection: "column", paddingLeft: bodyPadding, paddingRight: bodyPadding }}>
-        {children}
-      </box>
-      <Divider width={innerWidth} />
-      <PaddedRow>{footer}</PaddedRow>
-    </ModalFrame>
+    <>
+      {onClose ? <MouseDismissLayer screenWidth={screenWidth} screenHeight={screenHeight} onDismiss={onClose} /> : null}
+      <ModalFrame left={left} top={top} width={width} height={height} junctionRows={junctionRows} onClose={onClose}>
+        <PaddedRow>
+          <TextLine>
+            <span fg={danger ? DIALOG_DANGER : DIALOG_COUNT} attributes={TextAttributes.BOLD}>
+              {title}
+            </span>
+            {headerRight ? (
+              <>
+                <span>{" ".repeat(headerGap)}</span>
+                <span fg={DIALOG_MUTED}>{headerRight}</span>
+              </>
+            ) : null}
+          </TextLine>
+        </PaddedRow>
+        <PaddedRow>{subtitle}</PaddedRow>
+        <Divider width={innerWidth} />
+        {hasMiddleRow ? (
+          <>
+            <PaddedRow>{middleRow}</PaddedRow>
+            <Divider width={innerWidth} />
+          </>
+        ) : null}
+        <box
+          style={{ height: bodyHeight, flexDirection: "column", paddingLeft: bodyPadding, paddingRight: bodyPadding }}
+        >
+          {children}
+        </box>
+        <Divider width={innerWidth} />
+        <PaddedRow>{footer}</PaddedRow>
+      </ModalFrame>
+    </>
   )
 }
 
@@ -412,6 +468,7 @@ export function DialogTextarea({
   placeholder,
   focused,
   height,
+  clearVersion,
   onInput,
   onSubmit,
 }: {
@@ -419,10 +476,16 @@ export function DialogTextarea({
   placeholder: string
   focused: boolean
   height: number
+  clearVersion: number
   onInput: (value: string) => void
   onSubmit: (value: string) => void
 }) {
   const textareaRef = useRef<TextareaRenderable>(null)
+
+  useEffect(() => {
+    const textarea = textareaRef.current
+    if (textarea && textarea.plainText.length > 0) textarea.setText("")
+  }, [clearVersion])
 
   return (
     <box
@@ -438,11 +501,14 @@ export function DialogTextarea({
       <textarea
         ref={textareaRef}
         placeholder={placeholder}
-        initialValue={value}
+        initialValue=""
         focused={focused}
         style={{ width: "100%", height, wrapMode: "word" }}
         keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
-        onContentChange={() => onInput(textareaRef.current?.plainText ?? value)}
+        onContentChange={() => {
+          const nextValue = textareaRef.current?.plainText ?? value
+          onInput(nextValue)
+        }}
         onSubmit={() => onSubmit(textareaRef.current?.plainText ?? value)}
       />
     </box>

@@ -26,9 +26,13 @@ export type Section = {
 }
 
 export type Selection = {
+  type: "section" | "row"
   section: LaneStatus
   index: number
+  sessionId?: string | undefined
 }
+
+export type CollapsedSections = Partial<Record<LaneStatus, boolean>>
 
 export type PromptDialogState = {
   row: SessionRow
@@ -55,7 +59,7 @@ export type AddSessionDialogState = {
 }
 
 export type DeleteSessionDialogState = {
-  row: SessionRow
+  rows: SessionRow[]
   deleting?: boolean | undefined
   error?: string | undefined
 }
@@ -69,6 +73,7 @@ export type SearchInputProps = {
   value: string
   focused: boolean
   width: number
+  clearVersion: number
   onInput: (value: string) => void
   onFocus: () => void
 }
@@ -102,6 +107,12 @@ export function truncate(value: string, width: number): string {
   if (width <= 1) return ""
   if (value.length <= width) return value
   return `${value.slice(0, width - 1)}…`
+}
+
+export function shortcutHintLine(label: string, hint: string, width: number): string {
+  const suffix = ` ${hint}`
+  if (width <= suffix.length + 1) return truncate(`${label}${suffix}`, width)
+  return `${truncate(label, width - suffix.length).padEnd(width - suffix.length)}${suffix}`
 }
 
 export function preview(value: string): string {
@@ -255,54 +266,106 @@ function assignWorktreeColors(rows: SessionRow[]): Record<string, string> {
 export function selectedRow(
   selection: Selection,
   rowsBySection: Record<LaneStatus, SessionRow[]>,
+  collapsedSections: CollapsedSections = {},
 ): SessionRow | undefined {
-  return rowsBySection[selection.section][selection.index]
+  const normalized = normalizeSelection(selection, rowsBySection, collapsedSections)
+  if (normalized.type !== "row") return undefined
+  return rowsBySection[normalized.section][normalized.index]
+}
+
+export function normalizeSelection(
+  selection: Selection,
+  rowsBySection: Record<LaneStatus, SessionRow[]>,
+  collapsedSections: CollapsedSections = {},
+): Selection {
+  const entries = selectableEntries(rowsBySection, collapsedSections)
+  if (entries.length === 0) return { type: "section", section: selection.section, index: 0 }
+
+  if (selection.sessionId) {
+    const selectedEntry = entries.find((entry) => entry.type === "row" && entry.row.id === selection.sessionId)
+    if (selectedEntry) return entrySelection(selectedEntry)
+  }
+
+  if (selection.type === "section") return { type: "section", section: selection.section, index: 0 }
+
+  const row = !collapsedSections[selection.section] ? rowsBySection[selection.section][selection.index] : undefined
+  if (row) return { type: "row", section: selection.section, index: selection.index, sessionId: row.id }
+
+  if (SECTIONS.some((section) => section.status === selection.section)) {
+    return { type: "section", section: selection.section, index: 0 }
+  }
+
+  return entrySelection(entries[0]!)
 }
 
 export function moveSelection(
   selection: Selection,
   delta: number,
   rowsBySection: Record<LaneStatus, SessionRow[]>,
+  collapsedSections: CollapsedSections = {},
 ): Selection {
-  const entries = selectableEntries(rowsBySection)
-  if (entries.length === 0) return { section: selection.section, index: 0 }
+  const entries = selectableEntries(rowsBySection, collapsedSections)
+  if (entries.length === 0) return { type: "section", section: selection.section, index: 0 }
 
-  const currentIndex = entries.findIndex(
-    (entry) => entry.section === selection.section && entry.index === selection.index,
-  )
+  const currentIndex = selectionEntryIndex(selection, entries)
   const next = entries[nextIndex(currentIndex === -1 ? 0 : currentIndex, delta, entries.length)]!
-  return { section: next.section, index: next.index }
+  return entrySelection(next)
 }
 
 export function moveSelectionClamped(
   selection: Selection,
   delta: number,
   rowsBySection: Record<LaneStatus, SessionRow[]>,
+  collapsedSections: CollapsedSections = {},
 ): Selection {
-  const entries = selectableEntries(rowsBySection)
-  if (entries.length === 0) return { section: selection.section, index: 0 }
+  const entries = selectableEntries(rowsBySection, collapsedSections)
+  if (entries.length === 0) return { type: "section", section: selection.section, index: 0 }
 
-  const currentIndex = entries.findIndex(
-    (entry) => entry.section === selection.section && entry.index === selection.index,
-  )
+  const currentIndex = selectionEntryIndex(selection, entries)
   const next = entries[clamp((currentIndex === -1 ? 0 : currentIndex) + delta, 0, entries.length - 1)]!
-  return { section: next.section, index: next.index }
+  return entrySelection(next)
 }
 
 export function selectionEdge(
   selection: Selection,
   edge: "top" | "bottom",
   rowsBySection: Record<LaneStatus, SessionRow[]>,
+  collapsedSections: CollapsedSections = {},
 ): Selection {
-  const entries = selectableEntries(rowsBySection)
-  if (entries.length === 0) return { section: selection.section, index: 0 }
+  const entries = selectableEntries(rowsBySection, collapsedSections)
+  if (entries.length === 0) return { type: "section", section: selection.section, index: 0 }
 
   const next = edge === "top" ? entries[0]! : entries[entries.length - 1]!
-  return { section: next.section, index: next.index }
+  return entrySelection(next)
 }
 
-function selectableEntries(rowsBySection: Record<LaneStatus, SessionRow[]>) {
-  return SECTIONS.flatMap((section) =>
-    rowsBySection[section.status].map((_row, index) => ({ section: section.status, index })),
+function selectableEntries(rowsBySection: Record<LaneStatus, SessionRow[]>, collapsedSections: CollapsedSections) {
+  return SECTIONS.flatMap((section) => [
+    { type: "section" as const, section: section.status, index: 0 },
+    ...(collapsedSections[section.status]
+      ? []
+      : rowsBySection[section.status].map((row, index) => ({
+          type: "row" as const,
+          section: section.status,
+          index,
+          row,
+        }))),
+  ])
+}
+
+function selectionEntryIndex(selection: Selection, entries: ReturnType<typeof selectableEntries>): number {
+  if (selection.sessionId) {
+    const sessionIndex = entries.findIndex((entry) => entry.type === "row" && entry.row.id === selection.sessionId)
+    if (sessionIndex !== -1) return sessionIndex
+  }
+
+  return entries.findIndex(
+    (entry) => entry.type === selection.type && entry.section === selection.section && entry.index === selection.index,
   )
+}
+
+function entrySelection(entry: ReturnType<typeof selectableEntries>[number]): Selection {
+  return entry.type === "section"
+    ? { type: "section", section: entry.section, index: 0 }
+    : { type: "row", section: entry.section, index: entry.index, sessionId: entry.row.id }
 }

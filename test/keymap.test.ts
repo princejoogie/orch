@@ -3,6 +3,7 @@ import { command } from "../src/keymap/command.ts"
 import { dashboardKeymap, type DashboardKeymapCtx } from "../src/keymap/dashboard.ts"
 import { createDispatcher } from "../src/keymap/dispatcher.ts"
 import { Keymap } from "../src/keymap/keymap.ts"
+import { normalizeOpenTuiKey } from "../src/keymap/opentui-adapter.ts"
 import { parseKey } from "../src/keymap/keys.ts"
 
 describe("keymap dispatcher", () => {
@@ -57,6 +58,7 @@ describe("keymap dispatcher", () => {
     let closed = false
     const ctx: DashboardKeymapCtx = {
       textInputActive: false,
+      menu: null,
       helpDialog: {
         commandCount: 2,
         close: () => {
@@ -70,8 +72,10 @@ describe("keymap dispatcher", () => {
       addSessionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
+      settingsDialog: null,
       search: null,
       listNav: null,
+      clearTextInput: () => false,
       quit: () => {},
     }
     const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
@@ -85,5 +89,107 @@ describe("keymap dispatcher", () => {
     expect(moves).toEqual([1, 1, -1])
     expect(executed).toBe(true)
     expect(closed).toBe(true)
+  })
+
+  test("menu supports selection and executing items", () => {
+    const moves: number[] = []
+    const openedMenus: string[] = []
+    let executed = false
+    let closed = false
+    const ctx: DashboardKeymapCtx = {
+      textInputActive: false,
+      menu: {
+        itemCount: 2,
+        close: () => {
+          closed = true
+        },
+        openMenu: (menu) => openedMenus.push(menu),
+        moveSelection: (delta) => moves.push(delta),
+        executeSelected: () => {
+          executed = true
+        },
+      },
+      helpDialog: null,
+      addSessionDialog: null,
+      promptDialog: null,
+      deleteSessionDialog: null,
+      settingsDialog: null,
+      search: null,
+      listNav: null,
+      clearTextInput: () => false,
+      quit: () => {},
+    }
+    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("1")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("2")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(moves).toEqual([1, 1, -1])
+    expect(openedMenus).toEqual(["actions", "selected"])
+    expect(executed).toBe(true)
+    expect(closed).toBe(true)
+  })
+
+  test("list navigation opens settings and server selector shortcuts", () => {
+    const openedMenus: string[] = []
+    let openedSettings = false
+    const ctx: DashboardKeymapCtx = {
+      textInputActive: false,
+      menu: null,
+      helpDialog: null,
+      addSessionDialog: null,
+      promptDialog: null,
+      deleteSessionDialog: null,
+      settingsDialog: null,
+      search: null,
+      listNav: {
+        tabCount: 0,
+        hasSelection: false,
+        hasDeletableSelection: false,
+        halfPage: 1,
+        refresh: () => {},
+        openAddSession: () => {},
+        openDeleteSession: () => {},
+        executeSelection: () => {},
+        openTmux: () => {},
+        toggleVisualSelection: () => {},
+        toggleCurrentSelection: () => {},
+        clearMultiSelection: () => false,
+        focusSearch: () => {},
+        openHelp: () => {},
+        openSettings: () => {
+          openedSettings = true
+        },
+        openMenu: (menu) => openedMenus.push(menu),
+        selectTab: () => {},
+        cycleTab: () => {},
+        moveSelection: () => {},
+        moveSelectionClamped: () => {},
+        moveTop: () => {},
+        moveBottom: () => {},
+        quit: () => {},
+        toggleConsole: () => {},
+      },
+      clearTextInput: () => false,
+      quit: () => {},
+    }
+    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("ctrl+s")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("ctrl+p")).kind).toBe("ran")
+
+    expect(openedMenus).toEqual(["servers"])
+    expect(openedSettings).toBe(true)
+  })
+
+  test("normalizes OpenTUI comma key names", () => {
+    expect(
+      normalizeOpenTuiKey({ name: "comma", ctrl: true, shift: false, meta: false, option: false } as never),
+    ).toEqual({ key: "comma", ctrl: true, shift: false, meta: false })
   })
 })

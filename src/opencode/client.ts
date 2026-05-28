@@ -6,15 +6,17 @@ import {
   type SessionMessage,
   type SessionMessagesResponse,
 } from "@opencode-ai/sdk/v2"
+import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerUrl } from "../config/orch.ts"
 
 export const DEFAULT_LIMIT = 300
-export const DEFAULT_OPENCODE_SERVER_URL = "http://localhost:4096"
 
 export function opencodeServerUrl(): string {
-  return Bun.env.OPENCODE_SERVER_URL ?? DEFAULT_OPENCODE_SERVER_URL
+  return defaultOpencodeServerUrl()
 }
 
-export const opencodeClient = createOpencodeClient({ baseUrl: opencodeServerUrl() })
+export function opencodeClient(serverUrl = opencodeServerUrl()) {
+  return createOpencodeClient({ baseUrl: normalizeServerUrl(serverUrl) || DEFAULT_OPENCODE_SERVER_URL })
+}
 
 export type LatestMessages = {
   userMessage: string
@@ -27,8 +29,9 @@ export async function sendPrompt(input: {
   text: string
   directory?: string | undefined
   workspaceID?: string | undefined
+  serverUrl?: string | undefined
 }): Promise<void> {
-  await opencodeClient.session.promptAsync(
+  await opencodeClient(input.serverUrl).session.promptAsync(
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
@@ -42,8 +45,10 @@ export async function createSessionWithPrompt(input: {
   text: string
   directory: string
   workspaceID?: string | undefined
+  serverUrl?: string | undefined
 }): Promise<string> {
-  const session = await opencodeClient.session.create(
+  const client = opencodeClient(input.serverUrl)
+  const session = await client.session.create(
     { directory: input.directory, ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}) },
     { throwOnError: true },
   )
@@ -53,6 +58,7 @@ export async function createSessionWithPrompt(input: {
     directory: input.directory,
     text: input.text,
     ...(input.workspaceID !== undefined ? { workspaceID: input.workspaceID } : {}),
+    ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
   })
 
   return session.data.id
@@ -62,8 +68,9 @@ export async function deleteSession(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
+  serverUrl?: string | undefined
 }): Promise<void> {
-  await opencodeClient.session.delete(
+  await opencodeClient(input.serverUrl).session.delete(
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
@@ -77,8 +84,9 @@ export async function loadLatestMessages(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   limit?: number | undefined
+  serverUrl?: string | undefined
 }): Promise<LatestMessages> {
-  const result = await opencodeClient.session.messages(
+  const result = await opencodeClient(input.serverUrl).session.messages(
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
@@ -95,16 +103,18 @@ export async function loadContextUsage(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   historyAssistantMessage?: AssistantMessage | undefined
+  serverUrl?: string | undefined
 }): Promise<{ tokens?: number; percent?: number }> {
+  const client = opencodeClient(input.serverUrl)
   const [context, providers] = await Promise.all([
-    opencodeClient.v2.session.context(
+    client.v2.session.context(
       {
         sessionID: input.sessionID,
         ...routeOptions(input),
       },
       { throwOnError: true },
     ),
-    opencodeClient.config.providers(routeOptions(input), { throwOnError: true }),
+    client.config.providers(routeOptions(input), { throwOnError: true }),
   ])
 
   const latestAssistant = latestAssistantMessage(context.data)

@@ -1,6 +1,6 @@
 # Keymaps
 
-The keymap system in `src/keymap/` is a local, small-app adaptation of `ghui`'s `@ghui/keymap` package.
+The keymap system in `src/keymap/` owns keyboard parsing, scoping, dispatch, and app command bindings.
 
 ## Files
 
@@ -22,7 +22,8 @@ Keymaps are scoped by mode:
 - Prompt dialog scope handles cancel.
 - Delete dialog scope handles confirm/cancel.
 - Search scope handles blur.
-- List navigation scope handles session/project/app shortcuts.
+- List navigation scope handles session/project/app shortcuts, lane-title collapse, and multi-session selection.
+- Menu scope handles dropdown navigation and top-menu number shortcuts so `1`/`2` can switch menus while a dropdown is open.
 
 Only one relevant scope should own a key at a time. This prevents `q`, `j`, `/`, or digits from leaking while text input or dialogs are active.
 
@@ -56,8 +57,16 @@ enabled: (ctx) => ctx.hasSelection || "No session selected."
 
 Disabled bindings count as handled by the keymap. This is intentional: the key should not fall through to an underlying widget.
 
-## Do Not
+## Dashboard Selection
 
-- Do not add one-off `useKeyboard` handlers in UI components for app commands.
-- Do not make scrollboxes focused to get navigation for free.
-- Do not let text-input modes share the list navigation scope.
+- Lane titles are selectable entries. `enter` toggles the selected lane between expanded and collapsed.
+- `v` toggles visual session selection. Entering visual mode toggles the focused session, and moving with `j`/`k`/arrows while visual mode is active toggles each focused session.
+- `space` toggles the focused session in the selected set without entering visual mode.
+- `esc` clears visual/multi-selection before it falls back to the normal quit behavior.
+- `d` deletes the selected set when any sessions are checked; otherwise it deletes the focused session.
+
+## Ownership Rules
+
+- App commands route through keymaps so command handling has one dispatch path.
+- Widget focus is reserved for widgets that own direct text entry or renderer-native interaction.
+- Text-input and modal modes use narrower scopes than list navigation so printable text and modal keys cannot leak into app navigation.

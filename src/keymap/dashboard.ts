@@ -8,6 +8,14 @@ export interface HelpDialogCtx {
   readonly executeSelected: () => void
 }
 
+export interface MenuCtx {
+  readonly itemCount: number
+  readonly close: () => void
+  readonly openMenu: (menu: "actions" | "selected" | "servers") => void
+  readonly moveSelection: (delta: -1 | 1) => void
+  readonly executeSelected: () => void
+}
+
 export interface AddSessionDialogCtx {
   readonly worktreeCount: number
   readonly close: () => void
@@ -23,6 +31,12 @@ export interface DeleteSessionDialogCtx {
   readonly confirm: () => void
 }
 
+export interface SettingsDialogCtx {
+  readonly serverCount: number
+  readonly close: () => void
+  readonly moveServer: (delta: -1 | 1) => void
+}
+
 export interface SearchCtx {
   readonly blur: () => void
 }
@@ -30,14 +44,20 @@ export interface SearchCtx {
 export interface ListNavCtx {
   readonly tabCount: number
   readonly hasSelection: boolean
+  readonly hasDeletableSelection: boolean
   readonly halfPage: number
   readonly refresh: () => void
   readonly openAddSession: () => void
   readonly openDeleteSession: () => void
-  readonly openPrompt: () => void
+  readonly executeSelection: () => void
   readonly openTmux: () => void
+  readonly toggleVisualSelection: () => void
+  readonly toggleCurrentSelection: () => void
+  readonly clearMultiSelection: () => boolean
   readonly focusSearch: () => void
   readonly openHelp: () => void
+  readonly openSettings: () => void
+  readonly openMenu: (menu: "actions" | "selected" | "servers") => void
   readonly selectTab: (index: number) => void
   readonly cycleTab: (delta: -1 | 1) => void
   readonly moveSelection: (delta: number) => void
@@ -50,20 +70,25 @@ export interface ListNavCtx {
 
 export interface DashboardKeymapCtx {
   readonly textInputActive: boolean
+  readonly menu: MenuCtx | null
   readonly helpDialog: HelpDialogCtx | null
   readonly addSessionDialog: AddSessionDialogCtx | null
   readonly promptDialog: PromptDialogCtx | null
   readonly deleteSessionDialog: DeleteSessionDialogCtx | null
+  readonly settingsDialog: SettingsDialogCtx | null
   readonly search: SearchCtx | null
   readonly listNav: ListNavCtx | null
+  readonly clearTextInput: () => boolean
   readonly quit: () => void
 }
 
 const Dashboard = context<DashboardKeymapCtx>()
+const Menu = context<MenuCtx>()
 const HelpDialog = context<HelpDialogCtx>()
 const AddSessionDialog = context<AddSessionDialogCtx>()
 const PromptDialog = context<PromptDialogCtx>()
 const DeleteSessionDialog = context<DeleteSessionDialogCtx>()
+const SettingsDialog = context<SettingsDialogCtx>()
 const Search = context<SearchCtx>()
 const ListNav = context<ListNavCtx>()
 
@@ -76,6 +101,7 @@ const tabNumberBindings = Array.from({ length: 9 }, (_, index) => ({
 }))
 
 const selectedSession = (ctx: ListNavCtx) => ctx.hasSelection || "No session selected."
+const deletableSelection = (ctx: ListNavCtx) => ctx.hasDeletableSelection || "No session selected."
 
 const helpDialogKeymap = HelpDialog(
   { id: "help.close", title: "Close help", keys: ["escape", "?"], run: (ctx) => ctx.close() },
@@ -94,6 +120,27 @@ const helpDialogKeymap = HelpDialog(
     run: (ctx) => ctx.moveSelection(1),
   },
   { id: "help.execute", title: "Run selected help command", keys: ["return"], run: (ctx) => ctx.executeSelected() },
+)
+
+const menuKeymap = Menu(
+  { id: "menu.actions.open", title: "Open actions menu", keys: ["1"], run: (ctx) => ctx.openMenu("actions") },
+  { id: "menu.selected.open", title: "Open selected menu", keys: ["2"], run: (ctx) => ctx.openMenu("selected") },
+  { id: "menu.close", title: "Close menu", keys: ["escape"], run: (ctx) => ctx.close() },
+  {
+    id: "menu.previous",
+    title: "Previous menu item",
+    keys: ["k", "up", "ctrl+p", "shift+tab"],
+    enabled: (ctx) => ctx.itemCount > 1 || "Only one item.",
+    run: (ctx) => ctx.moveSelection(-1),
+  },
+  {
+    id: "menu.next",
+    title: "Next menu item",
+    keys: ["j", "down", "ctrl+n", "tab"],
+    enabled: (ctx) => ctx.itemCount > 1 || "Only one item.",
+    run: (ctx) => ctx.moveSelection(1),
+  },
+  { id: "menu.execute", title: "Run selected menu item", keys: ["return"], run: (ctx) => ctx.executeSelected() },
 )
 
 const addSessionDialogKeymap = AddSessionDialog(
@@ -131,6 +178,24 @@ const deleteSessionDialogKeymap = DeleteSessionDialog(
   { id: "session-delete.confirm-y", title: "Delete session", keys: ["y"], run: (ctx) => ctx.confirm() },
 )
 
+const settingsDialogKeymap = SettingsDialog(
+  { id: "settings.close", title: "Close settings", keys: ["escape"], run: (ctx) => ctx.close() },
+  {
+    id: "settings.server.next",
+    title: "Next server",
+    keys: ["tab"],
+    enabled: (ctx) => ctx.serverCount > 1 || "Only one server.",
+    run: (ctx) => ctx.moveServer(1),
+  },
+  {
+    id: "settings.server.previous",
+    title: "Previous server",
+    keys: ["shift+tab"],
+    enabled: (ctx) => ctx.serverCount > 1 || "Only one server.",
+    run: (ctx) => ctx.moveServer(-1),
+  },
+)
+
 const searchKeymap = Search({
   id: "search.blur",
   title: "Blur search",
@@ -140,23 +205,40 @@ const searchKeymap = Search({
 
 const listNavKeymap = ListNav(
   { id: "help.open", title: "Open help", keys: ["?"], run: (ctx) => ctx.openHelp() },
+  { id: "menu.actions.open", title: "Open actions menu", keys: ["1"], run: (ctx) => ctx.openMenu("actions") },
+  { id: "menu.selected.open", title: "Open selected menu", keys: ["2"], run: (ctx) => ctx.openMenu("selected") },
+  { id: "menu.servers.open", title: "Open server selector", keys: ["ctrl+s"], run: (ctx) => ctx.openMenu("servers") },
+  { id: "settings.open", title: "Open settings", keys: ["ctrl+p"], run: (ctx) => ctx.openSettings() },
   { id: "search.focus", title: "Focus search", keys: ["/"], run: (ctx) => ctx.focusSearch() },
-  { id: "app.quit", title: "Quit", keys: ["escape", "q"], run: (ctx) => ctx.quit() },
+  {
+    id: "selection.clear-or-quit",
+    title: "Clear selection or quit",
+    keys: ["escape", "q"],
+    run: (ctx) => {
+      if (!ctx.clearMultiSelection()) ctx.quit()
+    },
+  },
   { id: "sessions.refresh", title: "Refresh sessions", keys: ["r"], run: (ctx) => ctx.refresh() },
   { id: "sessions.new", title: "Create new session", keys: ["a"], run: (ctx) => ctx.openAddSession() },
+  { id: "selection.visual", title: "Toggle visual selection", keys: ["v"], run: (ctx) => ctx.toggleVisualSelection() },
+  {
+    id: "selection.toggle",
+    title: "Toggle selected session",
+    keys: ["space"],
+    run: (ctx) => ctx.toggleCurrentSelection(),
+  },
   {
     id: "sessions.delete",
-    title: "Delete selected session",
+    title: "Delete selected sessions",
     keys: ["d"],
-    enabled: selectedSession,
+    enabled: deletableSelection,
     run: (ctx) => ctx.openDeleteSession(),
   },
   {
     id: "sessions.prompt",
-    title: "Prompt selected session",
+    title: "Open selected session or toggle lane",
     keys: ["return"],
-    enabled: selectedSession,
-    run: (ctx) => ctx.openPrompt(),
+    run: (ctx) => ctx.executeSelection(),
   },
   {
     id: "sessions.open-tmux",
@@ -188,11 +270,20 @@ const listNavKeymap = ListNav(
 )
 
 export const dashboardKeymap = Dashboard(
-  { id: "app.quit.ctrl-c", title: "Quit", keys: ["ctrl+c"], run: (ctx) => ctx.quit() },
+  {
+    id: "app.quit.ctrl-c",
+    title: "Quit",
+    keys: ["ctrl+c"],
+    run: (ctx) => {
+      if (!ctx.clearTextInput()) ctx.quit()
+    },
+  },
+  menuKeymap.scope((ctx) => ctx.menu),
   helpDialogKeymap.scope((ctx) => ctx.helpDialog),
   addSessionDialogKeymap.scope((ctx) => ctx.addSessionDialog),
   promptDialogKeymap.scope((ctx) => ctx.promptDialog),
   deleteSessionDialogKeymap.scope((ctx) => ctx.deleteSessionDialog),
+  settingsDialogKeymap.scope((ctx) => ctx.settingsDialog),
   searchKeymap.scope((ctx) => ctx.search),
   listNavKeymap.scope((ctx) => !ctx.textInputActive && ctx.listNav),
 )
