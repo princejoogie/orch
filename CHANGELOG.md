@@ -1,5 +1,25 @@
 # orch
 
+## 1.1.0
+
+### Minor Changes
+
+- Add persistent server settings and richer dashboard controls.
+
+  Highlights:
+
+  - Adds an in-app Settings dialog for managing opencode persistence server URLs.
+  - Persists orch configuration under `~/.config/orch/config.json`, with active server and known server list normalization.
+  - Switches dashboard queries and session actions to the active configured server instead of relying only on `OPENCODE_SERVER_URL`.
+  - Adds a server selector menu in the sidebar and a settings shortcut for quickly changing or adding servers.
+  - Adds a top menu bar with Actions and Selected menus for mouse-driven access to common dashboard commands.
+  - Adds visual multi-select mode with row checkboxes, space toggling, `v` selection mode, and escape/quit behavior that clears active selections first.
+  - Supports deleting multiple selected sessions in the background, with success/error toast feedback and automatic refresh after completion.
+  - Adds collapsible session lanes, section-row navigation, and double-click lane toggling.
+  - Improves dialogs with explicit button rows, clickable close/cancel actions, clearable text inputs, and outside-click dismissal layers.
+  - Updates shortcut help, keymap tests, selection behavior, and repository docs for the new menu, settings, multi-select, and dialog interactions.
+  - Refreshes the README demo image.
+
 ## 1.0.0
 
 ### Major Changes
