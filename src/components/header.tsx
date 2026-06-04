@@ -9,7 +9,6 @@ export function Header({ width }: { width: number }) {
   const controller = useDashboardControllerContext()
   const globalStore = useGlobalStore()
   const now = Date.now()
-  const rows = controller.activeProjectRows
   const serverUrl = controller.projectSnapshot?.serverUrl ?? globalStore.config.activeServerUrl
   const active = globalStore.openMenu === "servers"
 
@@ -33,10 +32,19 @@ export function Header({ width }: { width: number }) {
           style={{ fg: active ? theme.text : theme.textMuted, ...(active ? { attributes: TextAttributes.BOLD } : {}) }}
         />
       </box>
-      <text content={`${rows.length} sessions`} style={{ fg: theme.text, marginTop: 1 }} />
-      <text content={`${countLane(rows, "working", now)} working`} style={{ fg: theme.warning }} />
-      <text content={`${countLane(rows, "needs-input", now)} needs input`} style={{ fg: theme.info }} />
-      <text content={`${countLane(rows, "completed", now)} completed`} style={{ fg: theme.success }} />
+      <text content={`${controller.activeProjectRows.length} sessions`} style={{ fg: theme.text, marginTop: 1 }} />
+      <text
+        content={`${countLane(controller.activeProjectRows, "working", now)} working`}
+        style={{ fg: theme.warning }}
+      />
+      <text
+        content={`${countLane(controller.activeProjectRows, "needs-input", now)} needs input`}
+        style={{ fg: theme.info }}
+      />
+      <text
+        content={`${countLane(controller.activeProjectRows, "completed", now)} completed`}
+        style={{ fg: theme.success }}
+      />
     </box>
   )
 }

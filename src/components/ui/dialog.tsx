@@ -307,8 +307,8 @@ export function SearchDialogFrame({
   )
 }
 
-export function standardDialogBodyHeight(height: number, hasMiddleRow = false): number {
-  return Math.max(1, height - (hasMiddleRow ? 9 : 7))
+export function standardDialogBodyHeight(height: number, hasMiddleRow = false, hasSubtitle = true): number {
+  return Math.max(1, height - (hasSubtitle ? (hasMiddleRow ? 9 : 7) : hasMiddleRow ? 8 : 6))
 }
 
 export function StandardDialogFrame({
@@ -333,7 +333,7 @@ export function StandardDialogFrame({
   title: string
   danger?: boolean
   headerRight?: string | undefined
-  subtitle: ReactNode
+  subtitle?: ReactNode | undefined
   middleRow?: ReactNode
   footer: ReactNode
   onClose?: (() => void) | undefined
@@ -344,11 +344,15 @@ export function StandardDialogFrame({
   const top = Math.max(1, Math.floor((screenHeight - height) / 2))
   const innerWidth = Math.max(16, width - 2)
   const contentWidth = Math.max(14, innerWidth - 2)
+  const hasSubtitle = subtitle !== undefined && subtitle !== null && subtitle !== false
   const hasMiddleRow = middleRow !== undefined && middleRow !== null && middleRow !== false
-  const bodyHeight = standardDialogBodyHeight(height, hasMiddleRow)
+  const bodyHeight = standardDialogBodyHeight(height, hasMiddleRow, hasSubtitle)
   const rightText = headerRight ?? ""
   const headerGap = Math.max(1, contentWidth - title.length - rightText.length)
-  const junctionRows = hasMiddleRow ? [2, 4, height - 4] : [2, height - 4]
+  const headerDividerRow = hasSubtitle ? 2 : 1
+  const junctionRows = hasMiddleRow
+    ? [headerDividerRow, headerDividerRow + 2, height - 4]
+    : [headerDividerRow, height - 4]
 
   return (
     <>
@@ -367,7 +371,7 @@ export function StandardDialogFrame({
             ) : null}
           </TextLine>
         </PaddedRow>
-        <PaddedRow>{subtitle}</PaddedRow>
+        {hasSubtitle ? <PaddedRow>{subtitle}</PaddedRow> : null}
         <Divider width={innerWidth} />
         {hasMiddleRow ? (
           <>

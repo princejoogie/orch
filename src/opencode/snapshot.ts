@@ -45,8 +45,8 @@ export async function getProjects(
     await Promise.all(
       projects.data.map(async (project) =>
         Promise.all([
-          loadProjectWorktrees(client, project, options.signal),
-          loadRecentProjectSessionUpdated(client, project.worktree, options.signal),
+          loadProjectWorktrees(project),
+          loadRecentProjectSessionUpdated(client, project, options.signal),
         ]).then(([worktrees, sessionUpdated]) =>
           sessionUpdated !== undefined ? toProjectRow(project, worktrees, sessionUpdated) : undefined,
         ),
@@ -82,13 +82,14 @@ export async function getProjectSessions(options: {
     },
     { throwOnError: true, ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   )
+  const projectSessions = sessions.data.filter((session) => session.projectID === options.project.id)
   const [statuses, details] = await Promise.all([
-    loadStatuses(sessions.data, serverUrl, options.signal),
-    loadSessionDetails(sessions.data, serverUrl, options.signal),
+    loadStatuses(projectSessions, serverUrl, options.signal),
+    loadSessionDetails(projectSessions, serverUrl, options.signal),
   ])
 
   return {
-    rows: sessions.data.map((session) =>
+    rows: projectSessions.map((session) =>
       toRow(session, statuses.get(routeKey(session))?.[session.id], details.get(session.id), options.project),
     ),
     serverUrl,
@@ -99,38 +100,47 @@ export async function getProjectSessions(options: {
 type StatusMap = Record<string, OpencodeSessionStatus>
 type SessionDetails = Pick<SessionRow, "latestMessage" | "latestUserMessage" | "contextTokens" | "contextPercent">
 
-async function loadProjectWorktrees(
-  client: ReturnType<typeof opencodeClient>,
-  project: OpencodeProject,
-  signal: AbortSignal | undefined,
-): Promise<WorktreeRow[]> {
+async function loadProjectWorktrees(project: OpencodeProject): Promise<WorktreeRow[]> {
+  return worktreeRows(project.worktree, await loadGitWorktreeDirectories(project.worktree))
+}
+
+async function loadGitWorktreeDirectories(directory: string): Promise<string[]> {
   try {
-    const worktrees = await client.worktree.list(
-      { directory: project.worktree },
-      { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
-    )
-    return worktreeRows(project.worktree, worktrees.data)
-  } catch (worktreeError) {
-    if (isAbortError(worktreeError)) throw worktreeError
-    return worktreeRows(project.worktree, [])
+    const process = Bun.spawn(["git", "-C", directory, "worktree", "list", "--porcelain"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    })
+    const output = await new Response(process.stdout).text()
+    const exitCode = await process.exited
+    if (exitCode !== 0) return []
+
+    return output
+      .split("\n")
+      .filter((line) => line.startsWith("worktree "))
+      .map((line) => line.slice("worktree ".length))
+      .filter((path) => path.length > 0)
+  } catch {
+    return []
   }
 }
 
 async function loadRecentProjectSessionUpdated(
   client: ReturnType<typeof opencodeClient>,
-  directory: string,
+  project: OpencodeProject,
   signal: AbortSignal | undefined,
 ): Promise<number | undefined> {
   const start = Date.now() - PROJECT_SESSION_WINDOW_MS
   try {
     const sessions = await client.session.list(
-      { directory, scope: "project", start },
+      { directory: project.worktree, scope: "project", start },
       { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
     )
-    return sessions.data.reduce<number | undefined>(
-      (updated, session) => Math.max(updated ?? session.time.updated, session.time.updated),
-      undefined,
-    )
+    return sessions.data
+      .filter((session) => session.projectID === project.id)
+      .reduce<number | undefined>(
+        (updated, session) => Math.max(updated ?? session.time.updated, session.time.updated),
+        undefined,
+      )
   } catch (sessionError) {
     if (isAbortError(sessionError)) throw sessionError
     return undefined

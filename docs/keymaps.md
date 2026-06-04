@@ -18,7 +18,7 @@ The keymap system in `src/keymap/` owns keyboard parsing, scoping, dispatch, and
 Keymaps are scoped by mode:
 
 - Help dialog scope handles help close, command selection, and command execution keys.
-- Add-session dialog scope handles cancel, input/selector focus switching, and focused worktree selector navigation.
+- Add-session dialog scope handles cancel, input/selector focus switching, focused worktree selector navigation, selection commit, and focused non-primary worktree removal.
 - Prompt dialog scope handles cancel.
 - Delete dialog scope handles confirm/cancel.
 - Settings page scope handles back and server selection.

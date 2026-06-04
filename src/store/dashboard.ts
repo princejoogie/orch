@@ -7,6 +7,7 @@ import type {
   DeleteSessionDialogState,
   PromptDialogState,
   Selection,
+  WorktreeOption,
 } from "../lib/utils.ts"
 import type { DashboardSnapshot, SessionRow } from "../opencode.ts"
 
@@ -43,6 +44,8 @@ export type DashboardStore = {
   closeAddSessionDialog: () => void
   setAddSessionValue: (value: string) => void
   setAddSessionWorktreeIndex: (worktreeIndex: number) => void
+  addAddSessionWorktree: (worktree: WorktreeOption) => void
+  removeAddSessionWorktree: (directory: string) => void
   setAddSessionFocus: (focus: AddSessionDialogState["focus"]) => void
   toggleAddSessionFocus: () => void
   setAddSessionSending: () => void
@@ -124,6 +127,36 @@ function createDashboardStore() {
       set((state) => ({
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, worktreeIndex } : undefined,
       })),
+    addAddSessionWorktree: (worktree) =>
+      set((state) => {
+        if (!state.addSessionDialog) return { addSessionDialog: undefined }
+        const existingIndex = state.addSessionDialog.worktrees.findIndex(
+          (option) => option.directory === worktree.directory,
+        )
+        if (existingIndex !== -1) {
+          return { addSessionDialog: { ...state.addSessionDialog, worktreeIndex: existingIndex } }
+        }
+
+        return {
+          addSessionDialog: {
+            ...state.addSessionDialog,
+            worktrees: [...state.addSessionDialog.worktrees, worktree],
+            worktreeIndex: state.addSessionDialog.worktrees.length,
+          },
+        }
+      }),
+    removeAddSessionWorktree: (directory) =>
+      set((state) => {
+        if (!state.addSessionDialog) return { addSessionDialog: undefined }
+        const worktrees = state.addSessionDialog.worktrees.filter((worktree) => worktree.directory !== directory)
+        return {
+          addSessionDialog: {
+            ...state.addSessionDialog,
+            worktrees,
+            worktreeIndex: Math.min(state.addSessionDialog.worktreeIndex, worktrees.length),
+          },
+        }
+      }),
     setAddSessionFocus: (focus) =>
       set((state) => ({
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, focus } : undefined,
@@ -286,6 +319,7 @@ function fuzzyIncludes(value: string, query: string): boolean {
 function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogState {
   return {
     projectTitle: state.projectTitle,
+    projectDirectory: state.projectDirectory,
     worktrees: state.worktrees,
     worktreeIndex: state.worktreeIndex,
     focus: state.focus,

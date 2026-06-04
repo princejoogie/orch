@@ -51,6 +51,7 @@ export type WorktreeOption = {
 
 export type AddSessionDialogState = {
   projectTitle: string
+  projectDirectory: string
   worktrees: WorktreeOption[]
   worktreeIndex: number
   focus: "input" | "worktree"
@@ -101,6 +102,10 @@ export function truncate(value: string, width: number): string {
   if (width <= 1) return ""
   if (value.length <= width) return value
   return `${value.slice(0, width - 1)}…`
+}
+
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
 }
 
 export function shortcutHintLine(label: string, hint: string, width: number): string {
@@ -224,7 +229,14 @@ export function projectTabs(projects: ProjectRow[], rowsByProjectId: Record<stri
 }
 
 export function worktreeOptions(tab?: ProjectTab): WorktreeOption[] {
-  return tab?.worktrees ?? []
+  const worktrees = tab?.worktrees ?? []
+  const byDirectory = new Map<string, WorktreeOption>()
+
+  for (const worktree of worktrees) {
+    if (!byDirectory.has(worktree.directory)) byDirectory.set(worktree.directory, worktree)
+  }
+
+  return [...byDirectory.values()]
 }
 
 function assignWorktreeColors(rows: SessionRow[]): Record<string, string> {

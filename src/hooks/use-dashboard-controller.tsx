@@ -28,6 +28,7 @@ import {
   selectedRow,
   selectionEdge,
   worktreeOptions,
+  errorMessage,
   type CollapsedSections,
   type LaneStatus,
   type ProjectTab,
@@ -35,8 +36,10 @@ import {
 } from "../lib/utils.ts"
 import {
   createSessionWithPrompt,
+  createWorktree,
   deleteSession,
   getProjects,
+  removeWorktree,
   sendPrompt,
   type ProjectSnapshot,
   type SessionRow,
@@ -101,6 +104,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   const settingsController = useSettingsControllerContext()
   const dashboardStoreRef = useRef(dashboardStore)
   const globalStoreRef = useRef(globalStore)
+  const projectErrorToastRef = useRef<string | undefined>(undefined)
 
   dashboardStoreRef.current = dashboardStore
   globalStoreRef.current = globalStore
@@ -112,12 +116,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   const { refetch: refetchProjects } = projectsQuery
 
   const projectSnapshot = projectsQuery.data
-  const projectQueryError =
-    projectsQuery.error instanceof Error
-      ? projectsQuery.error.message
-      : projectsQuery.error
-        ? String(projectsQuery.error)
-        : undefined
+  const projectQueryError = projectsQuery.error ? errorMessage(projectsQuery.error) : undefined
+  const projectErrorToastKey = projectQueryError
+    ? `${globalStore.config.activeServerUrl}\n${projectQueryError}`
+    : undefined
   const tabs = useMemo(
     () => projectTabs(projectSnapshot?.projects ?? [], dashboardStore.rowsByProjectId),
     [dashboardStore.rowsByProjectId, projectSnapshot?.projects],
@@ -260,17 +262,24 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       dashboard: {
         addSessionDialog: dashboardStore.addSessionDialog
           ? {
-              worktreeCount: dashboardStore.addSessionDialog.worktrees.length,
+              worktreeCount: dashboardStore.addSessionDialog.worktrees.length + 1,
               focus: dashboardStore.addSessionDialog.focus,
               close: dashboardStore.closeAddSessionDialog,
               toggleFocus: dashboardStore.toggleAddSessionFocus,
               moveWorktree: (delta) => {
                 const dialog = dashboardStore.addSessionDialog
-                if (!dialog || dialog.worktrees.length <= 1) return
+                if (!dialog || dialog.worktrees.length === 0) return
                 dashboardStore.setAddSessionWorktreeIndex(
-                  nextIndex(dialog.worktreeIndex, delta, dialog.worktrees.length),
+                  nextIndex(dialog.worktreeIndex, delta, dialog.worktrees.length + 1),
                 )
               },
+              commitWorktree: () => {
+                const dialog = dashboardStore.addSessionDialog
+                if (!dialog) return
+                dashboardStore.setAddSessionFocus("input")
+              },
+              canRemoveWorktree: canRemoveSelectedAddSessionWorktree(),
+              removeWorktree: () => void removeSelectedAddSessionWorktree(),
             }
           : null,
         promptDialog: dashboardStore.promptDialog ? { close: dashboardStore.closePromptDialog } : null,
@@ -367,15 +376,39 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   }, [refetchProjects])
 
   useEffect(() => {
-    let disposed = false
-    void loadOrchConfig().then((loadedConfig) => {
-      if (disposed) return
-      const globalStoreSnapshot = globalStoreRef.current
-      if (globalStoreSnapshot.config.activeServerUrl !== loadedConfig.activeServerUrl) {
-        dashboardStoreRef.current.clearRowsByProject()
-      }
-      globalStoreSnapshot.setConfig(loadedConfig)
+    if (!projectErrorToastKey) {
+      projectErrorToastRef.current = undefined
+      return
+    }
+
+    if (projectErrorToastRef.current === projectErrorToastKey) return
+    projectErrorToastRef.current = projectErrorToastKey
+    globalStoreRef.current.addToast({
+      status: "error",
+      title: "Failed to load projects",
+      detail: projectQueryError,
     })
+  }, [projectErrorToastKey, projectQueryError])
+
+  useEffect(() => {
+    let disposed = false
+    void loadOrchConfig()
+      .then((loadedConfig) => {
+        if (disposed) return
+        const globalStoreSnapshot = globalStoreRef.current
+        if (globalStoreSnapshot.config.activeServerUrl !== loadedConfig.activeServerUrl) {
+          dashboardStoreRef.current.clearRowsByProject()
+        }
+        globalStoreSnapshot.setConfig(loadedConfig)
+      })
+      .catch((configError) => {
+        if (disposed) return
+        globalStoreRef.current.addToast({
+          status: "error",
+          title: "Failed to load config",
+          detail: errorMessage(configError),
+        })
+      })
     return () => {
       disposed = true
     }
@@ -419,6 +452,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     if (worktrees.length === 0) return
     dashboardStore.openAddSessionDialog({
       projectTitle: activeTab.title,
+      projectDirectory: activeTab.directory,
       worktrees,
       worktreeIndex: 0,
       focus: "input",
@@ -632,7 +666,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     try {
       await openTmuxSessionForRow(row)
     } catch (tmuxError) {
-      console.error(tmuxError instanceof Error ? tmuxError.message : String(tmuxError))
+      globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
     }
   }
 
@@ -640,11 +674,21 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     const trimmed = value.trim()
     if (!trimmed || !dashboardStore.addSessionDialog || dashboardStore.addSessionDialog.sending) return
 
-    const worktree = dashboardStore.addSessionDialog.worktrees[dashboardStore.addSessionDialog.worktreeIndex]
-    if (!worktree) return
+    let worktree = dashboardStore.addSessionDialog.worktrees[dashboardStore.addSessionDialog.worktreeIndex]
 
     dashboardStore.setAddSessionSending()
     try {
+      if (!worktree && activeTab) {
+        const created = await createWorktree({
+          directory: activeTab.directory,
+          serverUrl: globalStore.config.activeServerUrl,
+        })
+        worktree = { directory: created.directory, name: created.name }
+        dashboardStore.addAddSessionWorktree(worktree)
+      }
+
+      if (!worktree) return
+
       await createSessionWithPrompt({
         directory: worktree.directory,
         workspaceID: worktree.workspaceID,
@@ -654,7 +698,38 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       dashboardStore.closeAddSessionDialog()
       await refreshDashboard()
     } catch (createError) {
-      dashboardStore.setAddSessionError(createError instanceof Error ? createError.message : String(createError))
+      const detail = errorMessage(createError)
+      dashboardStore.setAddSessionError(detail)
+      globalStore.addToast({ status: "error", title: "Failed to create session", detail })
+    }
+  }
+
+  function canRemoveSelectedAddSessionWorktree(): boolean {
+    const dialog = dashboardStore.addSessionDialog
+    if (!dialog || dialog.sending) return false
+    const worktree = dialog.worktrees[dialog.worktreeIndex]
+    return Boolean(worktree && worktree.directory !== dialog.projectDirectory)
+  }
+
+  async function removeSelectedAddSessionWorktree() {
+    const dialog = dashboardStore.addSessionDialog
+    if (!dialog || dialog.sending) return
+    const worktree = dialog.worktrees[dialog.worktreeIndex]
+    if (!worktree || worktree.directory === dialog.projectDirectory) return
+
+    try {
+      await removeWorktree({
+        projectDirectory: dialog.projectDirectory,
+        worktreeDirectory: worktree.directory,
+        serverUrl: globalStore.config.activeServerUrl,
+      })
+      dashboardStore.removeAddSessionWorktree(worktree.directory)
+      globalStore.addToast({ status: "success", title: "Removed worktree", detail: worktree.name })
+      await refreshDashboard()
+    } catch (removeError) {
+      const detail = errorMessage(removeError)
+      dashboardStore.setAddSessionError(detail)
+      globalStore.addToast({ status: "error", title: "Failed to remove worktree", detail })
     }
   }
 
@@ -675,7 +750,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       dashboardStore.closePromptDialog()
       await refreshDashboard()
     } catch (promptError) {
-      dashboardStore.setPromptError(promptError instanceof Error ? promptError.message : String(promptError))
+      const detail = errorMessage(promptError)
+      dashboardStore.setPromptError(detail)
+      globalStore.addToast({ status: "error", title: "Failed to send prompt", detail })
     }
   }
 

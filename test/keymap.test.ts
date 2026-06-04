@@ -180,6 +180,7 @@ describe("keymap dispatcher", () => {
   test("add session dialog tabs between input and worktree selector", () => {
     const focus: { current: "input" | "worktree" } = { current: "input" }
     const moves: number[] = []
+    let removed = false
     let closed = false
     const ctx: DashboardKeymapCtx = {
       addSessionDialog: {
@@ -194,6 +195,13 @@ describe("keymap dispatcher", () => {
           focus.current = focus.current === "input" ? "worktree" : "input"
         },
         moveWorktree: (delta) => moves.push(delta),
+        commitWorktree: () => {
+          focus.current = "input"
+        },
+        canRemoveWorktree: true,
+        removeWorktree: () => {
+          removed = true
+        },
       },
       promptDialog: null,
       deleteSessionDialog: null,
@@ -208,12 +216,19 @@ describe("keymap dispatcher", () => {
     expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("pending")
+    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("worktree")
     expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
     expect(focus.current).toBe("input")
     expect(dispatcher.dispatch(parseKey("k")).kind).toBe("no-match")
     expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
 
     expect(moves).toEqual([1, 1, -1])
+    expect(removed).toBe(true)
     expect(closed).toBe(true)
   })
 

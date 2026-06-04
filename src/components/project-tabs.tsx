@@ -26,8 +26,10 @@ export function ProjectTabs({ width }: { width: number }) {
         const hovered = hoveredTabId === tab.id
         const working = countLane(tab.rows, "working", controller.now)
         const needsInput = countLane(tab.rows, "needs-input", controller.now)
-        const countLabel = `${working}/${needsInput}`
-        const label = `${truncate(tab.title, Math.max(1, tabWidth - countLabel.length - 1))} ${countLabel}`
+        const countLabel = working > 0 || needsInput > 0 ? `${working}/${needsInput}` : ""
+        const label = countLabel
+          ? `${truncate(tab.title, Math.max(1, tabWidth - countLabel.length - 1))} ${countLabel}`
+          : tab.title
         return (
           <box
             id={tabElementId(tab)}

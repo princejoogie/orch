@@ -108,7 +108,7 @@ Generic keymap files stay reusable by modeling parsing and dispatch. App-specifi
 
 `src/opencode/snapshot.ts` owns assembling the dashboard snapshot.
 
-Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from `client.worktree.list()`, and selected-project sessions come from `client.session.list()`. Project snapshots are filtered to projects with sessions and sorted by latest session activity before reaching UI code.
+Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from local `git worktree list --porcelain`, and selected-project sessions come from `client.session.list()`. Project snapshots are filtered to projects with sessions whose `projectID` matches the project row and sorted by latest session activity before reaching UI code.
 
 UI components should consume prepared `SessionRow` data rather than calling the opencode SDK directly.
 

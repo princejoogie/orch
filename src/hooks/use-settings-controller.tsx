@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, type ReactNode } from "react"
 import { normalizeServerUrl, saveOrchConfig, serverNameFromUrl, type OrchConfig } from "../config/orch.ts"
+import { errorMessage } from "../lib/utils.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
 
@@ -62,9 +63,9 @@ function useSettingsController(): SettingsController {
       try {
         await switchServer(server.url)
       } catch (settingsError) {
-        globalStoreRef.current.setSettingsError(
-          settingsError instanceof Error ? settingsError.message : String(settingsError),
-        )
+        const detail = errorMessage(settingsError)
+        globalStoreRef.current.setSettingsError(detail)
+        globalStoreRef.current.addToast({ status: "error", title: "Failed to switch server", detail })
       }
     },
     [switchServer],
@@ -86,9 +87,9 @@ function useSettingsController(): SettingsController {
         globalStoreRef.current.syncSettingsFromConfig(nextConfig)
         globalStoreRef.current.bumpSettingsClearVersion()
       } catch (settingsError) {
-        globalStoreRef.current.setSettingsError(
-          settingsError instanceof Error ? settingsError.message : String(settingsError),
-        )
+        const detail = errorMessage(settingsError)
+        globalStoreRef.current.setSettingsError(detail)
+        globalStoreRef.current.addToast({ status: "error", title: "Failed to save server", detail })
       }
     },
     [persistConfig],

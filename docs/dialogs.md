@@ -99,6 +99,9 @@ Prompt submission is an app-level decision, so textarea submit semantics are exp
 The new-session dialog starts with focus in the prompt textarea.
 
 - `tab` and `shift-tab` switch focus between the prompt textarea and worktree selector.
-- The worktree selector renders as a dropdown while focused.
+- The worktree selector trigger is plain `Worktree: <name>` text and reuses the shared `MenuDropdown` component while focused.
 - `j`/`k`, `down`/`up`, and `ctrl-n`/`ctrl-p` cycle worktrees only while the worktree selector is focused.
+- `enter` commits the selected worktree and returns focus to the prompt textarea.
+- `dd` removes the selected non-primary worktree while the worktree selector is focused.
+- The final worktree selector option is `New worktree`; selecting it only marks the pending choice, and the worktree is created when the message is sent.
 - Printable keys are not captured by worktree navigation while the prompt textarea is focused.

@@ -16,6 +16,10 @@ export function MenuDropdown({
   top,
   items,
   selectedIndex,
+  visibleStart = 0,
+  visibleCount = items.length,
+  maxWidth,
+  showShortcuts = true,
   onSelect,
   onClose,
 }: {
@@ -23,29 +27,40 @@ export function MenuDropdown({
   top: number
   items: readonly MenuItem[]
   selectedIndex: number
+  visibleStart?: number | undefined
+  visibleCount?: number | undefined
+  maxWidth?: number | undefined
+  showShortcuts?: boolean | undefined
   onSelect: (index: number) => void
   onClose: () => void
 }) {
-  const labelWidth = Math.max(14, ...items.map((item) => item.label.length))
-  const shortcutWidth = Math.max(8, ...items.map((item) => item.shortcut.length))
-  const innerWidth = labelWidth + shortcutWidth + 3
+  const visibleItems = items.slice(visibleStart, visibleStart + visibleCount)
+  const shortcutWidth = showShortcuts ? Math.max(8, ...items.map((item) => item.shortcut.length)) : 0
+  const naturalLabelWidth = Math.max(14, ...items.map((item) => item.label.length))
+  const naturalInnerWidth = showShortcuts ? naturalLabelWidth + shortcutWidth + 3 : naturalLabelWidth + 2
+  const innerWidth = maxWidth ? Math.max(1, maxWidth - 2) : naturalInnerWidth
+  const labelWidth = showShortcuts ? Math.max(1, innerWidth - shortcutWidth - 3) : Math.max(1, innerWidth - 2)
   const width = innerWidth + 2
-  const height = items.length + 2
+  const height = visibleItems.length + 2
 
   return (
     <ModalFrame left={left} top={top} width={width} height={height}>
-      {items.map((item, index) => (
-        <MenuDropdownItem
-          key={item.label}
-          item={item}
-          selected={index === selectedIndex}
-          labelWidth={labelWidth}
-          shortcutWidth={shortcutWidth}
-          width={innerWidth}
-          onSelect={() => onSelect(index)}
-          onClose={onClose}
-        />
-      ))}
+      {visibleItems.map((item, offset) => {
+        const index = visibleStart + offset
+        return (
+          <MenuDropdownItem
+            key={`${item.label}:${index}`}
+            item={item}
+            selected={index === selectedIndex}
+            labelWidth={labelWidth}
+            shortcutWidth={shortcutWidth}
+            showShortcut={showShortcuts}
+            width={innerWidth}
+            onSelect={() => onSelect(index)}
+            onClose={onClose}
+          />
+        )
+      })}
     </ModalFrame>
   )
 }
@@ -55,6 +70,7 @@ function MenuDropdownItem({
   selected,
   labelWidth,
   shortcutWidth,
+  showShortcut,
   width,
   onSelect,
   onClose,
@@ -63,6 +79,7 @@ function MenuDropdownItem({
   selected: boolean
   labelWidth: number
   shortcutWidth: number
+  showShortcut: boolean
   width: number
   onSelect: () => void
   onClose: () => void
@@ -87,8 +104,12 @@ function MenuDropdownItem({
         <span fg={fg} {...(selected && !disabled ? { attributes: TextAttributes.BOLD } : {})}>
           {fitCell(` ${item.label}`, labelWidth + 1)}
         </span>
-        <span fg={disabled ? theme.border : theme.textMuted}>{fitCell(item.shortcut, shortcutWidth, "right")}</span>
-        <span> </span>
+        {showShortcut ? (
+          <>
+            <span fg={disabled ? theme.border : theme.textMuted}>{fitCell(item.shortcut, shortcutWidth, "right")}</span>
+            <span> </span>
+          </>
+        ) : null}
       </TextLine>
     </box>
   )

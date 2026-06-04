@@ -15,6 +15,8 @@ export function AppMenus({
 }) {
   const controller = useDashboardControllerContext()
   const globalStore = useGlobalStore()
+  const serverSelectorLeft = mainPanelWidth + SIDEBAR_PADDING_X
+  const serverSelectorTop = SIDEBAR_PADDING_Y + 1 + 3 + 1
 
   if (globalStore.openMenu === "actions") {
     return (
@@ -68,8 +70,8 @@ export function AppMenus({
           onDismiss={() => globalStore.setOpenMenu(undefined)}
         />
         <MenuDropdown
-          left={Math.min(Math.max(0, screenWidth - 1), mainPanelWidth + SIDEBAR_PADDING_X)}
-          top={SIDEBAR_PADDING_Y + 4}
+          left={serverSelectorLeft}
+          top={serverSelectorTop + 1}
           items={controller.serverMenuItems}
           selectedIndex={globalStore.selectedMenuIndex}
           onSelect={globalStore.setSelectedMenuIndex}

@@ -23,6 +23,9 @@ export interface AddSessionDialogCtx {
   readonly close: () => void
   readonly toggleFocus: () => void
   readonly moveWorktree: (delta: -1 | 1) => void
+  readonly commitWorktree: () => void
+  readonly canRemoveWorktree: boolean
+  readonly removeWorktree: () => void
 }
 
 export interface PromptDialogCtx {
@@ -180,6 +183,21 @@ const addSessionDialogKeymap = AddSessionDialog(
     when: (ctx) => ctx.focus === "worktree",
     enabled: (ctx) => ctx.worktreeCount > 1 || "Only one worktree.",
     run: (ctx) => ctx.moveWorktree(-1),
+  },
+  {
+    id: "session-new.worktree.commit",
+    title: "Use selected worktree",
+    keys: ["return"],
+    when: (ctx) => ctx.focus === "worktree",
+    run: (ctx) => ctx.commitWorktree(),
+  },
+  {
+    id: "session-new.worktree.remove",
+    title: "Remove selected worktree",
+    keys: ["d d"],
+    when: (ctx) => ctx.focus === "worktree",
+    enabled: (ctx) => ctx.canRemoveWorktree || "Cannot remove this worktree.",
+    run: (ctx) => ctx.removeWorktree(),
   },
 )
 

@@ -11,8 +11,9 @@ import {
   TextLine,
 } from "./ui/dialog.tsx"
 import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
+import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { clamp, truncate, wrapText, type WorktreeOption } from "../lib/utils.ts"
+import { clamp, wrapText, type WorktreeOption } from "../lib/utils.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
 
@@ -97,82 +98,111 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const inputHeight = 5
   const inputBlockHeight = inputHeight + 3
   const selectorFocused = state.focus === "worktree"
-  const worktreeLines = selectorFocused ? Math.min(state.worktrees.length, 6) : 0
-  const worktreeDropdownHeight = worktreeLines > 0 ? worktreeLines + 2 : 0
-  const worktreeStart = clamp(
-    state.worktreeIndex - worktreeLines + 1,
+  const selectorWidth = Math.max(1, dialogWidth - 4)
+  const bodyHeight = 2 + inputBlockHeight + (state.error ? 1 : 0)
+  const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 6))
+  const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
+  const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
+  const worktreeSelectorLeft = dialogLeft + 2
+  const worktreeSelectorTop = dialogTop + 3
+  const worktreeOptionCount = state.worktrees.length + 1
+  const worktreeVisibleCount = Math.min(worktreeOptionCount, 6)
+  const worktreeVisibleStart = clamp(
+    state.worktreeIndex - worktreeVisibleCount + 1,
     0,
-    Math.max(0, state.worktrees.length - worktreeLines),
+    Math.max(0, worktreeOptionCount - worktreeVisibleCount),
   )
-  const selectorWidth = Math.max(1, dialogWidth - 6)
-  const bodyHeight = 1 + 3 + worktreeDropdownHeight + inputBlockHeight + (state.error ? 1 : 0)
-  const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 7))
+  const worktreeMenuItems: MenuItem[] = [
+    ...state.worktrees.map((worktree, index) => ({
+      label: worktree.name,
+      shortcut: "",
+      run: () => {
+        dashboardStore.setAddSessionWorktreeIndex(index)
+        dashboardStore.setAddSessionFocus("input")
+      },
+    })),
+    {
+      label: "New worktree",
+      shortcut: "",
+      run: () => {
+        dashboardStore.setAddSessionWorktreeIndex(state.worktrees.length)
+        dashboardStore.setAddSessionFocus("input")
+      },
+    },
+  ]
 
   return (
-    <StandardDialogFrame
-      screenWidth={width}
-      screenHeight={height}
-      width={dialogWidth}
-      height={dialogHeight}
-      danger={Boolean(state.error)}
-      title="New session"
-      headerRight={state.sending ? "creating" : undefined}
-      subtitle={<PlainLine text={fitCell(state.projectTitle, dialogWidth - 4)} fg={theme.textMuted} />}
-      onClose={dashboardStore.closeAddSessionDialog}
-      footer={
-        <DialogFooterActions
-          width={dialogWidth - 4}
-          actionsWidth={27}
-          hints={
-            <HintRow
-              items={[
-                { key: "tab", label: "focus" },
-                { key: "j/k", label: "worktree", when: selectorFocused, disabled: state.worktrees.length <= 1 },
-                { key: "shift-enter", label: "newline" },
-              ]}
-            />
-          }
-        >
-          <ButtonRow width={27}>
-            <Button
-              label="Create"
-              shortcut="↵"
-              width={12}
-              disabled={state.sending || state.value.trim().length === 0}
-              onPress={() => void controller.submitAddSession(state.value)}
-            />
-            <ButtonSpacer />
-            <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closeAddSessionDialog} />
-          </ButtonRow>
-        </DialogFooterActions>
-      }
-    >
-      <DialogLabel>Worktree</DialogLabel>
-      <WorktreeSelector
-        width={selectorWidth}
-        worktrees={state.worktrees}
-        selectedIndex={state.worktreeIndex}
-        focused={selectorFocused}
-        visibleStart={worktreeStart}
-        visibleCount={worktreeLines}
-        onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
-        onSelect={dashboardStore.setAddSessionWorktreeIndex}
-        onCommit={(index) => {
-          dashboardStore.setAddSessionWorktreeIndex(index)
-          dashboardStore.setAddSessionFocus("input")
-        }}
-      />
-      <DialogTextarea
-        value={state.value}
-        placeholder={state.sending ? "Creating..." : "Type first prompt"}
-        focused={!state.sending && state.focus === "input"}
-        height={inputHeight}
-        clearVersion={dashboardStore.addSessionClearVersion}
-        onInput={dashboardStore.setAddSessionValue}
-        onSubmit={(value) => void controller.submitAddSession(value)}
-      />
-      <DialogError error={state.error} width={dialogWidth} />
-    </StandardDialogFrame>
+    <>
+      <StandardDialogFrame
+        screenWidth={width}
+        screenHeight={height}
+        width={dialogWidth}
+        height={dialogHeight}
+        danger={Boolean(state.error)}
+        title="New session"
+        headerRight={state.sending ? "creating" : undefined}
+        onClose={dashboardStore.closeAddSessionDialog}
+        footer={
+          <DialogFooterActions
+            width={dialogWidth - 4}
+            actionsWidth={27}
+            hints={
+              <HintRow
+                items={[
+                  { key: "tab", label: "focus" },
+                  { key: "j/k", label: "worktree", when: selectorFocused, disabled: worktreeOptionCount <= 1 },
+                  { key: "shift-enter", label: "newline" },
+                ]}
+              />
+            }
+          >
+            <ButtonRow width={27}>
+              <Button
+                label="Create"
+                shortcut="↵"
+                width={12}
+                disabled={state.sending || state.value.trim().length === 0}
+                onPress={() => void controller.submitAddSession(state.value)}
+              />
+              <ButtonSpacer />
+              <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closeAddSessionDialog} />
+            </ButtonRow>
+          </DialogFooterActions>
+        }
+      >
+        <WorktreeSelector
+          width={selectorWidth}
+          worktrees={state.worktrees}
+          selectedIndex={state.worktreeIndex}
+          focused={selectorFocused}
+          onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
+        />
+        <DialogTextarea
+          value={state.value}
+          placeholder={state.sending ? "Creating..." : "Type first prompt"}
+          focused={!state.sending && state.focus === "input"}
+          height={inputHeight}
+          clearVersion={dashboardStore.addSessionClearVersion}
+          onInput={dashboardStore.setAddSessionValue}
+          onSubmit={(value) => void controller.submitAddSession(value)}
+        />
+        <DialogError error={state.error} width={dialogWidth} />
+      </StandardDialogFrame>
+      {selectorFocused && worktreeMenuItems.length > 0 ? (
+        <MenuDropdown
+          left={worktreeSelectorLeft}
+          top={worktreeSelectorTop + 1}
+          items={worktreeMenuItems}
+          selectedIndex={state.worktreeIndex}
+          visibleStart={worktreeVisibleStart}
+          visibleCount={worktreeVisibleCount}
+          maxWidth={selectorWidth}
+          showShortcuts={false}
+          onSelect={dashboardStore.setAddSessionWorktreeIndex}
+          onClose={() => {}}
+        />
+      ) : null}
+    </>
   )
 }
 
@@ -181,90 +211,37 @@ function WorktreeSelector({
   worktrees,
   selectedIndex,
   focused,
-  visibleStart,
-  visibleCount,
   onFocus,
-  onSelect,
-  onCommit,
 }: {
   width: number
   worktrees: WorktreeOption[]
   selectedIndex: number
   focused: boolean
-  visibleStart: number
-  visibleCount: number
   onFocus: () => void
-  onSelect: (index: number) => void
-  onCommit: (index: number) => void
 }) {
   const selected = worktrees[selectedIndex]
-  const fieldWidth = Math.max(1, width - 2)
-  const selectedName = selected?.name ?? "No worktrees"
+  const fieldWidth = Math.max(1, width)
+  const selectedName = selected?.name ?? "New worktree"
+  const content = `Worktree: ${selectedName}`
 
   return (
-    <>
-      <box
-        style={{
-          height: 3,
-          width,
-          border: true,
-          borderColor: focused ? theme.info : theme.borderSubtle,
-          paddingLeft: 1,
-          paddingRight: 1,
-          marginBottom: focused ? 0 : 1,
-        }}
-        onMouseDown={(event) => {
-          mouseAction(event)
-          onFocus()
-        }}
-      >
-        <TextLine width={fieldWidth} bg={focused ? theme.backgroundElement : undefined}>
-          <span fg={selected ? theme.text : theme.textMuted} {...(focused ? { attributes: TextAttributes.BOLD } : {})}>
-            {fitCell(selectedName, Math.max(1, fieldWidth - 2))}
-          </span>
-          <span fg={focused ? theme.primary : theme.textMuted}> v</span>
-        </TextLine>
-      </box>
-      {focused && visibleCount > 0 ? (
-        <box
-          style={{
-            flexDirection: "column",
-            height: visibleCount + 2,
-            width,
-            border: true,
-            borderColor: theme.borderSubtle,
-            paddingLeft: 1,
-            paddingRight: 1,
-            marginBottom: 1,
-          }}
-        >
-          {worktrees.slice(visibleStart, visibleStart + visibleCount).map((worktree, offset) => {
-            const index = visibleStart + offset
-            const selectedOption = index === selectedIndex
-            return (
-              <box
-                key={`${worktree.directory}:${worktree.workspaceID ?? ""}`}
-                style={{ height: 1, width: fieldWidth }}
-                onMouseOver={() => onSelect(index)}
-                onMouseDown={(event) => {
-                  mouseAction(event)
-                  onCommit(index)
-                }}
-              >
-                <TextLine width={fieldWidth} bg={selectedOption ? theme.backgroundElement : undefined}>
-                  <span
-                    fg={selectedOption ? theme.text : theme.textMuted}
-                    {...(selectedOption ? { attributes: TextAttributes.BOLD } : {})}
-                  >
-                    {fitCell(`${selectedOption ? ">" : " "} ${truncate(worktree.name, fieldWidth - 3)}`, fieldWidth)}
-                  </span>
-                </TextLine>
-              </box>
-            )
-          })}
-        </box>
-      ) : null}
-    </>
+    <box
+      style={{
+        height: 1,
+        width,
+        marginBottom: 1,
+      }}
+      onMouseDown={(event) => {
+        mouseAction(event)
+        onFocus()
+      }}
+    >
+      <TextLine width={fieldWidth} bg={focused ? theme.backgroundElement : undefined}>
+        <span fg={selected ? theme.text : theme.textMuted} {...(focused ? { attributes: TextAttributes.BOLD } : {})}>
+          {fitCell(content, fieldWidth)}
+        </span>
+      </TextLine>
+    </box>
   )
 }
 

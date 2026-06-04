@@ -11,9 +11,7 @@ export function TopMenuBar({ width }: { width: number }) {
   const controller = useDashboardControllerContext()
   const dashboardStore = useDashboardStore()
   const globalStore = useGlobalStore()
-  const openMenu = globalStore.openMenu
-  const visualMode = dashboardStore.visualMode
-  const indicator = visualMode ? " VISUAL " : ""
+  const indicator = dashboardStore.visualMode ? " VISUAL " : ""
   const indicatorWidth = indicator.length
   const spacerWidth = Math.max(0, width - 27 - indicatorWidth)
 
@@ -30,23 +28,23 @@ export function TopMenuBar({ width }: { width: number }) {
       <MenuButton
         label="[1] Actions"
         width={13}
-        active={openMenu === "actions"}
+        active={globalStore.openMenu === "actions"}
         onPress={() => globalStore.toggleMenu("actions")}
         onHover={() => {
-          if (openMenu) controller.openMenu("actions")
+          if (globalStore.openMenu) controller.openMenu("actions")
         }}
       />
       <MenuButton
         label="[2] Selected"
         width={14}
-        active={openMenu === "selected"}
+        active={globalStore.openMenu === "selected"}
         onPress={() => globalStore.toggleMenu("selected")}
         onHover={() => {
-          if (openMenu) controller.openMenu("selected")
+          if (globalStore.openMenu) controller.openMenu("selected")
         }}
       />
       <text content={" ".repeat(spacerWidth)} style={{ bg: TOP_BAR_BACKGROUND }} />
-      {visualMode ? (
+      {dashboardStore.visualMode ? (
         <text
           content={indicator}
           style={{ fg: theme.background, bg: theme.primary, attributes: TextAttributes.BOLD }}

@@ -66,6 +66,6 @@ Search uses OpenTUI `<input>` and prompt/new-session dialogs use `<textarea>`.
 - Ctrl-C clears the active search, prompt, or new-session input when it has text; if the input is already empty, ctrl-C falls through to the normal app-level quit behavior.
 - Single-line search should stay live via `onInput`, not commit-only `onChange`.
 - Do not replay app state into inputs after `onInput`; only write into the widget for explicit app-owned resets such as Ctrl-C clearing.
-- The new-session dialog owns focus state between its textarea and worktree selector. `tab` changes dialog focus; selector navigation keys are scoped out while the textarea is focused.
+- The new-session dialog owns focus state between its textarea and worktree selector. `tab` changes dialog focus; selector navigation keys are scoped out while the textarea is focused, `enter` commits the focused selector back to the textarea, and `dd` removes a focused non-primary worktree.
 
 If we add custom query modals later, route raw text input through one dispatcher rather than several independent keyboard hooks.

@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
 import { EMPTY_SESSION_ROWS, POLL_INTERVAL_MS } from "../config/constants.ts"
-import { SECTIONS } from "../lib/utils.ts"
+import { SECTIONS, errorMessage } from "../lib/utils.ts"
 import { getProjectSessions } from "../opencode.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
@@ -12,70 +12,81 @@ import { SectionView } from "./session-table.tsx"
 export function ProjectSessionList({ width }: { width: number }) {
   const controller = useDashboardControllerContext()
   const dashboardStore = useDashboardStore()
+  const setRowsForProject = useDashboardStore((store) => store.setRowsForProject)
+  const setSessionListState = useDashboardStore((store) => store.setSessionListState)
   const globalStore = useGlobalStore()
-  const activeTab = controller.activeTab
-  const activeTabId = activeTab?.id
-  const activeTabRowsLoaded = controller.activeTabRowsLoaded
-  const setSessionListState = dashboardStore.setSessionListState
-  const setRowsForProject = dashboardStore.setRowsForProject
-  const serverUrl = globalStore.config.activeServerUrl
-  const sessionsQuery = useQuery({
-    queryKey: ["opencode-project-sessions", serverUrl, activeTab?.id],
-    enabled: activeTab !== undefined,
+  const addToast = useGlobalStore((store) => store.addToast)
+  const sessionErrorToastRef = useRef<string | undefined>(undefined)
+  const {
+    data: sessionsData,
+    error: sessionsErrorValue,
+    isPending: sessionsPending,
+    refetch: refetchSessions,
+  } = useQuery({
+    queryKey: ["opencode-project-sessions", globalStore.config.activeServerUrl, controller.activeTab?.id],
+    enabled: controller.activeTab !== undefined,
     queryFn: ({ signal }) => {
-      if (!activeTab) throw new Error("No project selected")
+      if (!controller.activeTab) throw new Error("No project selected")
       return getProjectSessions({
         project: {
-          id: activeTab.id,
-          title: activeTab.title,
-          directory: activeTab.directory,
-          worktreeName: activeTab.worktrees[0]?.name ?? activeTab.title,
-          worktrees: activeTab.worktrees,
+          id: controller.activeTab.id,
+          title: controller.activeTab.title,
+          directory: controller.activeTab.directory,
+          worktreeName: controller.activeTab.worktrees[0]?.name ?? controller.activeTab.title,
+          worktrees: controller.activeTab.worktrees,
           updated: 0,
         },
-        serverUrl,
+        serverUrl: globalStore.config.activeServerUrl,
         signal,
       })
     },
   })
   const rows =
-    sessionsQuery.data?.rows ?? (activeTabRowsLoaded ? (activeTab?.rows ?? EMPTY_SESSION_ROWS) : EMPTY_SESSION_ROWS)
-  const refetchSessions = sessionsQuery.refetch
-  const hasProject = activeTab !== undefined
-  const sessionError =
-    sessionsQuery.error instanceof Error
-      ? sessionsQuery.error.message
-      : sessionsQuery.error
-        ? String(sessionsQuery.error)
-        : undefined
+    sessionsData?.rows ??
+    (controller.activeTabRowsLoaded ? (controller.activeTab?.rows ?? EMPTY_SESSION_ROWS) : EMPTY_SESSION_ROWS)
+  const sessionError = sessionsErrorValue ? errorMessage(sessionsErrorValue) : undefined
+  const sessionErrorToastKey =
+    sessionError && controller.activeTab?.id
+      ? `${globalStore.config.activeServerUrl}\n${controller.activeTab.id}\n${sessionError}`
+      : undefined
 
   useEffect(() => {
-    if (activeTabId) setRowsForProject(activeTabId, rows)
-  }, [activeTabId, rows, setRowsForProject])
+    if (controller.activeTab?.id) setRowsForProject(controller.activeTab.id, rows)
+  }, [controller.activeTab?.id, rows, setRowsForProject])
 
   useEffect(() => {
     setSessionListState({
-      snapshot: sessionsQuery.data,
-      pending: hasProject && sessionsQuery.isPending && !activeTabRowsLoaded,
+      snapshot: sessionsData,
+      pending: controller.activeTab !== undefined && sessionsPending,
       error: sessionError,
       refetch: () => void refetchSessions(),
     })
   }, [
-    activeTabId,
-    activeTabRowsLoaded,
-    hasProject,
-    sessionError,
-    setSessionListState,
-    sessionsQuery.data,
-    sessionsQuery.isPending,
+    controller.activeTab,
+    controller.activeTabRowsLoaded,
     refetchSessions,
+    sessionError,
+    sessionsData,
+    sessionsPending,
+    setSessionListState,
   ])
 
   useEffect(() => {
-    if (!hasProject) return
+    if (!controller.activeTab) return
     const interval = setInterval(() => void refetchSessions(), POLL_INTERVAL_MS)
     return () => clearInterval(interval)
-  }, [hasProject, refetchSessions])
+  }, [controller.activeTab, refetchSessions])
+
+  useEffect(() => {
+    if (!sessionErrorToastKey) {
+      sessionErrorToastRef.current = undefined
+      return
+    }
+
+    if (sessionErrorToastRef.current === sessionErrorToastKey) return
+    sessionErrorToastRef.current = sessionErrorToastKey
+    addToast({ status: "error", title: "Failed to load sessions", detail: sessionError })
+  }, [addToast, sessionError, sessionErrorToastKey])
 
   return (
     <>
@@ -89,12 +100,15 @@ export function ProjectSessionList({ width }: { width: number }) {
           <text content={controller.projectSnapshot.serverUrl} style={{ fg: theme.textMuted }} />
         </box>
       ) : null}
-      {activeTab && sessionsQuery.isPending && !activeTabRowsLoaded ? (
-        <text content="loading project sessions…" style={{ fg: theme.info }} />
+      {controller.activeTab && sessionsPending ? (
+        <text
+          content={controller.activeTabRowsLoaded ? "updating project sessions…" : "loading project sessions…"}
+          style={{ fg: theme.info }}
+        />
       ) : null}
       {sessionError ? <text content={`error: ${sessionError}`} style={{ fg: theme.error }} /> : null}
       {!controller.projectPending &&
-      !activeTab &&
+      !controller.activeTab &&
       controller.projectSnapshot &&
       controller.projectSnapshot.projects.length > 0 ? (
         <text content="No project selected." style={{ fg: theme.warning }} />
@@ -104,7 +118,7 @@ export function ProjectSessionList({ width }: { width: number }) {
           key={section.status}
           section={section}
           rows={controller.rowsBySection[section.status]}
-          worktreeColors={activeTab?.worktreeColors ?? {}}
+          worktreeColors={controller.activeTab?.worktreeColors ?? {}}
           selection={controller.selection}
           active={controller.activeSection === section.status}
           collapsed={Boolean(dashboardStore.collapsedSections[section.status])}

@@ -34,8 +34,7 @@ export function ShortcutsDialog({ width, height }: { width: number; height: numb
 
   if (!globalStore.shortcutsDialogOpen) return null
 
-  const selectedIndex = globalStore.selectedShortcutIndex
-  const rows = buildShortcutRows(selectedIndex)
+  const rows = buildShortcutRows(globalStore.selectedShortcutIndex)
   const dialogWidth = Math.min(Math.max(52, Math.floor(width * 0.55)), 78, width - 4)
   const dialogHeight = Math.min(height - 2, rows.length + 6)
   const rowWidth = Math.max(1, dialogWidth - 2)
