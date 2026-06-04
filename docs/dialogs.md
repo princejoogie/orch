@@ -103,5 +103,5 @@ The new-session dialog starts with focus in the prompt textarea.
 - `j`/`k`, `down`/`up`, and `ctrl-n`/`ctrl-p` cycle worktrees only while the worktree selector is focused.
 - `enter` commits the selected worktree and returns focus to the prompt textarea.
 - `dd` removes the selected non-primary worktree while the worktree selector is focused.
-- The final worktree selector option is `New worktree`; selecting it only marks the pending choice, and the worktree is created when the message is sent.
+- The first worktree selector option is `New worktree`, but opening the dialog still selects the current worktree by default. Selecting `New worktree` only marks the pending choice, and the worktree is created when the message is sent.
 - Printable keys are not captured by worktree navigation while the prompt textarea is focused.

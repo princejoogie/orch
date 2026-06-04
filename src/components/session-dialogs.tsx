@@ -106,21 +106,14 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const worktreeSelectorLeft = dialogLeft + 2
   const worktreeSelectorTop = dialogTop + 3
   const worktreeOptionCount = state.worktrees.length + 1
+  const selectedDisplayWorktreeIndex = toDisplayWorktreeIndex(state.worktreeIndex, state.worktrees.length)
   const worktreeVisibleCount = Math.min(worktreeOptionCount, 6)
   const worktreeVisibleStart = clamp(
-    state.worktreeIndex - worktreeVisibleCount + 1,
+    selectedDisplayWorktreeIndex - worktreeVisibleCount + 1,
     0,
     Math.max(0, worktreeOptionCount - worktreeVisibleCount),
   )
   const worktreeMenuItems: MenuItem[] = [
-    ...state.worktrees.map((worktree, index) => ({
-      label: worktree.name,
-      shortcut: "",
-      run: () => {
-        dashboardStore.setAddSessionWorktreeIndex(index)
-        dashboardStore.setAddSessionFocus("input")
-      },
-    })),
     {
       label: "New worktree",
       shortcut: "",
@@ -129,6 +122,14 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         dashboardStore.setAddSessionFocus("input")
       },
     },
+    ...state.worktrees.map((worktree, index) => ({
+      label: worktree.name,
+      shortcut: "",
+      run: () => {
+        dashboardStore.setAddSessionWorktreeIndex(index)
+        dashboardStore.setAddSessionFocus("input")
+      },
+    })),
   ]
 
   return (
@@ -193,12 +194,14 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           left={worktreeSelectorLeft}
           top={worktreeSelectorTop + 1}
           items={worktreeMenuItems}
-          selectedIndex={state.worktreeIndex}
+          selectedIndex={selectedDisplayWorktreeIndex}
           visibleStart={worktreeVisibleStart}
           visibleCount={worktreeVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
-          onSelect={dashboardStore.setAddSessionWorktreeIndex}
+          onSelect={(index) =>
+            dashboardStore.setAddSessionWorktreeIndex(fromDisplayWorktreeIndex(index, state.worktrees.length))
+          }
           onClose={() => {}}
         />
       ) : null}
@@ -243,6 +246,14 @@ function WorktreeSelector({
       </TextLine>
     </box>
   )
+}
+
+function toDisplayWorktreeIndex(worktreeIndex: number, worktreeCount: number): number {
+  return worktreeIndex === worktreeCount ? 0 : worktreeIndex + 1
+}
+
+function fromDisplayWorktreeIndex(displayIndex: number, worktreeCount: number): number {
+  return displayIndex === 0 ? worktreeCount : displayIndex - 1
 }
 
 export function DeleteSessionDialog({ width, height }: { width: number; height: number }) {
