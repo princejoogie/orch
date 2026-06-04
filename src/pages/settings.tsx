@@ -2,11 +2,12 @@ import { TextAttributes } from "@opentui/core"
 import type { OrchServer } from "../config/orch.ts"
 import { serverNameFromUrl } from "../config/orch.ts"
 import { useSettingsControllerContext } from "../hooks/use-settings-controller.tsx"
-import { clamp, truncate } from "../lib/utils.ts"
+import { clamp } from "../lib/utils.ts"
 import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
 import { Button, ButtonRow, ButtonSpacer } from "../components/ui/button.tsx"
-import { DialogError, DialogLabel, DialogOption, DialogTextarea, PlainLine, fitCell } from "../components/ui/dialog.tsx"
+import { DialogError, DialogLabel, DialogTextarea, PlainLine, fitCell } from "../components/ui/dialog.tsx"
+import { MenuList, type MenuItem } from "../components/ui/menu-dropdown.tsx"
 
 export type SettingsPageState = {
   servers: OrchServer[]
@@ -31,6 +32,11 @@ export function SettingsPage({ width, height }: { width: number; height: number 
     0,
     Math.max(0, state.servers.length - serverLines),
   )
+  const serverMenuItems: MenuItem[] = state.servers.map((server, index) => ({
+    label: server.name,
+    shortcut: server.url === state.activeServerUrl ? "active" : "switch",
+    run: () => void settingsController.selectSettingsServer(index),
+  }))
 
   return (
     <box
@@ -57,21 +63,14 @@ export function SettingsPage({ width, height }: { width: number; height: number 
       <DialogLabel>Servers</DialogLabel>
       <box style={{ flexDirection: "column", height: serverLines, width: contentWidth }}>
         {state.servers.length > 0 ? (
-          state.servers.slice(serverStart, serverStart + serverLines).map((server, offset) => {
-            const index = serverStart + offset
-            return (
-              <DialogOption
-                key={server.url}
-                selected={index === state.selectedServerIndex}
-                onSelect={() => void settingsController.selectSettingsServer(index)}
-              >
-                {truncate(
-                  `${server.url === state.activeServerUrl ? "*" : " "} ${server.name} ${server.url}`,
-                  contentWidth - 2,
-                )}
-              </DialogOption>
-            )
-          })
+          <MenuList
+            items={serverMenuItems}
+            selectedIndex={state.selectedServerIndex}
+            visibleStart={serverStart}
+            visibleCount={serverLines}
+            width={contentWidth}
+            onSelect={globalStore.selectSettingsServer}
+          />
         ) : (
           <PlainLine text="No servers configured." fg={theme.textMuted} />
         )}

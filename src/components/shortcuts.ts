@@ -4,6 +4,7 @@ export type ShortcutAction =
   | "prompt-selected-session"
   | "create-session"
   | "delete-selected-session"
+  | "interrupt-selected-session"
   | "start-visual-selection"
   | "toggle-session-selection"
   | "clear-session-selection"
@@ -41,7 +42,13 @@ export const SHORTCUTS: readonly Shortcut[] = [
     action: "prompt-selected-session",
   },
   { scope: "Session", description: "Create new session", shortcut: "a", action: "create-session" },
-  { scope: "Session", description: "Delete selected sessions", shortcut: "d", action: "delete-selected-session" },
+  { scope: "Session", description: "Delete selected sessions", shortcut: "dd", action: "delete-selected-session" },
+  {
+    scope: "Session",
+    description: "Interrupt selected sessions",
+    shortcut: "ss",
+    action: "interrupt-selected-session",
+  },
   { scope: "Session", description: "Toggle visual selection", shortcut: "v", action: "start-visual-selection" },
   { scope: "Session", description: "Toggle session selection", shortcut: "space", action: "toggle-session-selection" },
   { scope: "Session", description: "Clear session selection", shortcut: "esc", action: "clear-session-selection" },

@@ -28,11 +28,21 @@ export interface AddSessionDialogCtx {
   readonly removeWorktree: () => void
 }
 
+export interface DeleteWorktreeDialogCtx {
+  readonly close: () => void
+  readonly confirm: () => void
+}
+
 export interface PromptDialogCtx {
   readonly close: () => void
 }
 
 export interface DeleteSessionDialogCtx {
+  readonly close: () => void
+  readonly confirm: () => void
+}
+
+export interface InterruptSessionDialogCtx {
   readonly close: () => void
   readonly confirm: () => void
 }
@@ -51,11 +61,13 @@ export interface ListNavCtx {
   readonly tabCount: number
   readonly hasSelection: boolean
   readonly hasDeletableSelection: boolean
+  readonly hasInterruptibleSelection: boolean
   readonly currentSessionId?: string | undefined
   readonly halfPage: number
   readonly refresh: () => void
   readonly openAddSession: () => void
   readonly openDeleteSession: () => void
+  readonly openInterruptSession: () => void
   readonly executeSelection: () => void
   readonly openTmux: () => void
   readonly toggleVisualSelection: (sessionId?: string | undefined) => void
@@ -85,8 +97,10 @@ export interface GlobalKeymapCtx {
 
 export interface DashboardKeymapCtx {
   readonly addSessionDialog: AddSessionDialogCtx | null
+  readonly deleteWorktreeDialog: DeleteWorktreeDialogCtx | null
   readonly promptDialog: PromptDialogCtx | null
   readonly deleteSessionDialog: DeleteSessionDialogCtx | null
+  readonly interruptSessionDialog: InterruptSessionDialogCtx | null
   readonly search: SearchCtx | null
   readonly listNav: ListNavCtx | null
 }
@@ -107,8 +121,10 @@ const Settings = context<SettingsKeymapCtx>()
 const Menu = context<MenuCtx>()
 const HelpDialog = context<HelpDialogCtx>()
 const AddSessionDialog = context<AddSessionDialogCtx>()
+const DeleteWorktreeDialog = context<DeleteWorktreeDialogCtx>()
 const PromptDialog = context<PromptDialogCtx>()
 const DeleteSessionDialog = context<DeleteSessionDialogCtx>()
+const InterruptSessionDialog = context<InterruptSessionDialogCtx>()
 const SettingsPage = context<SettingsPageCtx>()
 const Search = context<SearchCtx>()
 const ListNav = context<ListNavCtx>()
@@ -123,6 +139,7 @@ const tabNumberBindings = Array.from({ length: 9 }, (_, index) => ({
 
 const selectedSession = (ctx: ListNavCtx) => ctx.hasSelection || "No session selected."
 const deletableSelection = (ctx: ListNavCtx) => ctx.hasDeletableSelection || "No session selected."
+const interruptibleSelection = (ctx: ListNavCtx) => ctx.hasInterruptibleSelection || "No working session selected."
 
 const helpDialogKeymap = HelpDialog(
   { id: "help.close", title: "Close help", keys: ["escape", "?"], run: (ctx) => ctx.close() },
@@ -208,6 +225,16 @@ const promptDialogKeymap = PromptDialog({
   run: (ctx) => ctx.close(),
 })
 
+const deleteWorktreeDialogKeymap = DeleteWorktreeDialog(
+  ...confirmModalBindings<DeleteWorktreeDialogCtx>({
+    id: "worktree-delete",
+    close: (ctx) => ctx.close(),
+    cancelKeys: ["escape", "n"],
+    confirm: { title: "Delete worktree", run: (ctx) => ctx.confirm() },
+  }),
+  { id: "worktree-delete.confirm-y", title: "Delete worktree", keys: ["y"], run: (ctx) => ctx.confirm() },
+)
+
 const deleteSessionDialogKeymap = DeleteSessionDialog(
   ...confirmModalBindings<DeleteSessionDialogCtx>({
     id: "session-delete",
@@ -216,6 +243,16 @@ const deleteSessionDialogKeymap = DeleteSessionDialog(
     confirm: { title: "Delete session", run: (ctx) => ctx.confirm() },
   }),
   { id: "session-delete.confirm-y", title: "Delete session", keys: ["y"], run: (ctx) => ctx.confirm() },
+)
+
+const interruptSessionDialogKeymap = InterruptSessionDialog(
+  ...confirmModalBindings<InterruptSessionDialogCtx>({
+    id: "session-interrupt",
+    close: (ctx) => ctx.close(),
+    cancelKeys: ["escape", "n"],
+    confirm: { title: "Interrupt session", run: (ctx) => ctx.confirm() },
+  }),
+  { id: "session-interrupt.confirm-y", title: "Interrupt session", keys: ["y"], run: (ctx) => ctx.confirm() },
 )
 
 const settingsPageControlsKeymap = SettingsPage(
@@ -278,9 +315,16 @@ const listNavKeymap = ListNav(
   {
     id: "sessions.delete",
     title: "Delete selected sessions",
-    keys: ["d"],
+    keys: ["d d"],
     enabled: deletableSelection,
     run: (ctx) => ctx.openDeleteSession(),
+  },
+  {
+    id: "sessions.interrupt",
+    title: "Interrupt selected sessions",
+    keys: ["s s"],
+    enabled: interruptibleSelection,
+    run: (ctx) => ctx.openInterruptSession(),
   },
   {
     id: "sessions.prompt",
@@ -331,9 +375,11 @@ export const globalKeymap = Global(
 )
 
 export const dashboardPageKeymap = Dashboard(
+  deleteWorktreeDialogKeymap.scope((ctx) => ctx.deleteWorktreeDialog),
   addSessionDialogKeymap.scope((ctx) => ctx.addSessionDialog),
   promptDialogKeymap.scope((ctx) => ctx.promptDialog),
   deleteSessionDialogKeymap.scope((ctx) => ctx.deleteSessionDialog),
+  interruptSessionDialogKeymap.scope((ctx) => ctx.interruptSessionDialog),
   searchKeymap.scope((ctx) => ctx.search),
   listNavKeymap.scope((ctx) => ctx.listNav),
 )

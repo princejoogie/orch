@@ -146,7 +146,7 @@ Sessions are grouped into project tabs and lanes:
 - `Needs input`
 - `Completed`
 
-When opening a session in tmux, `orch` derives a session name from the project or git worktree, reuses an existing tmux session when it can, and focuses an existing `opencode` pane if one is already running.
+When opening a session in tmux, `orch` asks the opencode TUI to select the focused dashboard session, derives a session name from the project or git worktree, reuses an existing tmux session when it can, and focuses an existing `opencode` pane if one is already running.
 
 ## Conventions
 

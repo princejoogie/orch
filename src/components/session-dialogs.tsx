@@ -1,9 +1,9 @@
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core"
+import { useRef } from "react"
 import {
   DialogError,
   DialogLabel,
   DialogTextarea,
-  DialogTextLines,
   fitCell,
   HintRow,
   PlainLine,
@@ -14,6 +14,7 @@ import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } fro
 import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
 import { clamp, wrapText, type WorktreeOption } from "../lib/utils.ts"
+import type { SessionHistoryMessage } from "../opencode.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
 
@@ -21,22 +22,24 @@ export function PromptDialog({ width, height }: { width: number; height: number 
   const controller = useDashboardControllerContext()
   const dashboardStore = useDashboardStore()
   const state = dashboardStore.promptDialog
+  const historyRef = useRef<ScrollBoxRenderable>(null)
 
   if (!state) return null
 
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
-  const previewHeight = 3
-  const previewBlockHeight = previewHeight + 2
+  const historyHeight = 10
+  const historyBlockHeight = historyHeight + 1
   const inputBlockHeight = inputHeight + 3
-  const bodyHeight = 2 + previewBlockHeight * 2 + inputBlockHeight + (state.error ? 1 : 0)
-  const userLines = state.loadingPreview
-    ? [{ key: "loading", text: "Loading user message..." }]
-    : wrapText(state.latestUserMessage ?? "", dialogWidth - 6, previewHeight, "No previous user message.")
-  const assistantLines = state.loadingPreview
-    ? [{ key: "loading", text: "Loading assistant message..." }]
-    : wrapText(state.row.latestMessage, dialogWidth - 6, previewHeight)
+  const bodyHeight = 1 + historyBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
+  const historyLines = state.loadingPreview
+    ? [{ key: "loading", text: "Loading messages..." }]
+    : promptHistoryLines(state.row.messages, dialogWidth - 8)
   const dialogHeight = Math.min(height - 2, bodyHeight + 7)
+  const handleHistoryScroll = (event: MouseEvent) => {
+    if (event.scroll?.direction !== "up" || state.loadingMorePreview || !state.row.hasMoreMessages) return
+    if ((historyRef.current?.scrollTop ?? 0) <= 1) void controller.loadMorePromptMessages()
+  }
 
   return (
     <StandardDialogFrame
@@ -69,10 +72,30 @@ export function PromptDialog({ width, height }: { width: number; height: number 
         </DialogFooterActions>
       }
     >
-      <DialogLabel>User:</DialogLabel>
-      <DialogTextLines lines={userLines} height={previewHeight} />
-      <DialogLabel>Assistant:</DialogLabel>
-      <DialogTextLines lines={assistantLines} height={previewHeight} />
+      <DialogLabel>Messages:</DialogLabel>
+      <scrollbox
+        ref={historyRef}
+        focusable={false}
+        onMouseScroll={handleHistoryScroll}
+        style={{
+          contentOptions: { flexDirection: "column" },
+          height: historyHeight,
+          marginBottom: 1,
+          paddingLeft: 1,
+          paddingRight: 1,
+          scrollX: false,
+          scrollY: true,
+          stickyScroll: true,
+          stickyStart: "bottom",
+          verticalScrollbarOptions: { showArrows: false },
+          viewportCulling: true,
+        }}
+      >
+        {state.loadingMorePreview ? <text content="Loading older messages..." style={{ fg: theme.textMuted }} /> : null}
+        {historyLines.map((line) => (
+          <text key={line.key} content={line.text} style={{ fg: theme.textMuted }} />
+        ))}
+      </scrollbox>
       <DialogTextarea
         value={state.value}
         placeholder={state.sending ? "Sending..." : "Type prompt"}
@@ -85,6 +108,19 @@ export function PromptDialog({ width, height }: { width: number; height: number 
       <DialogError error={state.error} width={dialogWidth} />
     </StandardDialogFrame>
   )
+}
+
+function promptHistoryLines(messages: SessionHistoryMessage[], width: number) {
+  if (messages.length === 0) return [{ key: "empty", text: "No previous messages." }]
+
+  return messages.flatMap((message, index) => {
+    const label = message.role === "user" ? "User" : "Assistant"
+    const lines = wrapText(message.text, Math.max(1, width - label.length - 2), Number.MAX_SAFE_INTEGER)
+    return lines.map((line, lineIndex) => ({
+      key: `${index}:${line.key}`,
+      text: lineIndex === 0 ? `${label}: ${line.text}` : `${" ".repeat(label.length + 2)}${line.text}`,
+    }))
+  })
 }
 
 export function AddSessionDialog({ width, height }: { width: number; height: number }) {
@@ -115,7 +151,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   )
   const worktreeMenuItems: MenuItem[] = [
     {
-      label: "New worktree",
+      label: "+ New worktree",
       shortcut: "",
       run: () => {
         dashboardStore.setAddSessionWorktreeIndex(state.worktrees.length)
@@ -308,6 +344,103 @@ export function DeleteSessionDialog({ width, height }: { width: number; height: 
     >
       <PlainLine text={fitCell(worktree, dialogWidth - 6)} fg={theme.textMuted} />
       <PlainLine text={state.deleting ? "Deleting sessions..." : "This cannot be undone."} fg={theme.error} />
+      <DialogError error={state.error} width={dialogWidth} />
+    </StandardDialogFrame>
+  )
+}
+
+export function DeleteWorktreeDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.deleteWorktreeDialog
+
+  if (!state) return null
+
+  const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.55)), 72, width - 4)
+  const dialogHeight = 10
+
+  return (
+    <StandardDialogFrame
+      screenWidth={width}
+      screenHeight={height}
+      width={dialogWidth}
+      height={dialogHeight}
+      danger
+      title="Delete worktree?"
+      headerRight="destructive"
+      subtitle={<PlainLine text={fitCell(state.worktree.name, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={dashboardStore.closeDeleteWorktreeDialog}
+      footer={
+        <DialogFooterActions width={dialogWidth - 4} actionsWidth={33}>
+          <ButtonRow width={33}>
+            <Button label="Delete" shortcut="↵/y" width={14} danger onPress={controller.confirmDeleteWorktree} />
+            <ButtonSpacer />
+            <Button label="Cancel" shortcut="esc/n" width={18} onPress={dashboardStore.closeDeleteWorktreeDialog} />
+          </ButtonRow>
+        </DialogFooterActions>
+      }
+    >
+      <PlainLine text={fitCell(state.worktree.directory, dialogWidth - 6)} fg={theme.textMuted} />
+      <PlainLine text="This cannot be undone." fg={theme.error} />
+    </StandardDialogFrame>
+  )
+}
+
+export function InterruptSessionDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.interruptDialog
+
+  if (!state) return null
+
+  const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.55)), 72, width - 4)
+  const bodyHeight = state.error ? 4 : 3
+  const dialogHeight = bodyHeight + 7
+  const count = state.rows.length
+  const firstRow = state.rows[0]
+  const title = count === 1 ? "Interrupt session?" : `Interrupt ${count} sessions?`
+  const subtitle = count === 1 && firstRow ? firstRow.title : `${count} working sessions`
+  const worktree = count === 1 && firstRow ? firstRow.worktreeName : "Multiple worktrees may be affected."
+
+  return (
+    <StandardDialogFrame
+      screenWidth={width}
+      screenHeight={height}
+      width={dialogWidth}
+      height={dialogHeight}
+      danger
+      title={title}
+      headerRight={state.interrupting ? "interrupting" : "destructive"}
+      subtitle={<PlainLine text={fitCell(subtitle, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={dashboardStore.closeInterruptDialog}
+      footer={
+        <DialogFooterActions width={dialogWidth - 4} actionsWidth={36}>
+          <ButtonRow width={36}>
+            <Button
+              label="Interrupt"
+              shortcut="↵/y"
+              width={17}
+              danger
+              disabled={Boolean(state.interrupting)}
+              onPress={controller.confirmInterruptSession}
+            />
+            <ButtonSpacer />
+            <Button
+              label="Cancel"
+              shortcut="esc/n"
+              width={18}
+              disabled={Boolean(state.interrupting)}
+              onPress={dashboardStore.closeInterruptDialog}
+            />
+          </ButtonRow>
+        </DialogFooterActions>
+      }
+    >
+      <PlainLine text={fitCell(worktree, dialogWidth - 6)} fg={theme.textMuted} />
+      <PlainLine
+        text={state.interrupting ? "Interrupting sessions..." : "This stops active work in progress."}
+        fg={theme.error}
+      />
       <DialogError error={state.error} width={dialogWidth} />
     </StandardDialogFrame>
   )

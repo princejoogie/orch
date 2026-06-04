@@ -6,7 +6,7 @@ Dialogs use a drawn frame and a small set of reusable primitives in `src/compone
 
 - `src/components/ui/dialog.tsx`: shared frame, text rows, dividers, hint rows, textarea, and generic dialog primitives.
 - `src/components/app-dialogs.tsx`: shell overlay component that renders all app dialogs with only screen dimensions from the shell.
-- `src/components/session-dialogs.tsx`: session workflow dialogs: prompt, add session, delete session.
+- `src/components/session-dialogs.tsx`: session workflow dialogs: prompt, add session, delete worktree, delete session, interrupt session.
 - `src/components/shortcuts.ts`: keyboard shortcut/help metadata and command action identifiers.
 - `src/components/shortcuts-dialog.tsx`: keyboard shortcut/help dialog rendering.
 
@@ -94,6 +94,8 @@ Prompt textareas use explicit key bindings:
 
 Prompt submission is an app-level decision, so textarea submit semantics are explicit instead of inherited from the renderer default.
 
+The prompt-session dialog shows previous session messages in a fixed-height scrollable section above the textarea. The textarea keeps focus for typing; the message section starts at the newest loaded messages, supports mouse-wheel scrolling, and lazy-loads older messages when the user scrolls upward near the top.
+
 ## New Session Dialog
 
 The new-session dialog starts with focus in the prompt textarea.
@@ -102,6 +104,6 @@ The new-session dialog starts with focus in the prompt textarea.
 - The worktree selector trigger is plain `Worktree: <name>` text and reuses the shared `MenuDropdown` component while focused.
 - `j`/`k`, `down`/`up`, and `ctrl-n`/`ctrl-p` cycle worktrees only while the worktree selector is focused.
 - `enter` commits the selected worktree and returns focus to the prompt textarea.
-- `dd` removes the selected non-primary worktree while the worktree selector is focused.
-- The first worktree selector option is `New worktree`, but opening the dialog still selects the current worktree by default. Selecting `New worktree` only marks the pending choice, and the worktree is created when the message is sent.
+- `dd` opens a destructive confirmation dialog for the selected non-primary worktree while the worktree selector is focused. The confirmation uses the same `enter`/`y` confirm and `esc`/`n` cancel keys as deleting a session.
+- The first worktree selector option is `+ New worktree`, but opening the dialog still selects the current worktree by default. Selecting it only marks the pending choice, and the worktree is created when the message is sent.
 - Printable keys are not captured by worktree navigation while the prompt textarea is focused.

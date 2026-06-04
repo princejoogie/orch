@@ -3,6 +3,7 @@ import {
   moveSelection,
   moveSelectionClamped,
   normalizeSelection,
+  rowInLane,
   type LaneStatus,
   type Selection,
 } from "../src/lib/utils.ts"
@@ -13,6 +14,8 @@ const row = (id: string, status: SessionRow["status"]): SessionRow => ({
   title: id,
   latestMessage: "",
   latestUserMessage: "",
+  messages: [],
+  hasMoreMessages: false,
   directory: "/tmp",
   projectID: "project",
   projectTitle: "Project",
@@ -85,5 +88,19 @@ describe("selection movement", () => {
         working: true,
       }),
     ).toEqual({ type: "section", section: "working", index: 0 } satisfies Selection)
+  })
+})
+
+describe("lane filtering", () => {
+  test("completed rows need input for less than four hours", () => {
+    const now = 4 * 60 * 60 * 1000
+    const justInsideWindow = row("recent", "completed")
+    justInsideWindow.updated = now - 1
+    const atWindow = row("old", "completed")
+    atWindow.updated = 0
+
+    expect(rowInLane(justInsideWindow, "needs-input", now)).toBe(true)
+    expect(rowInLane(atWindow, "needs-input", now)).toBe(false)
+    expect(rowInLane(atWindow, "completed", now)).toBe(true)
   })
 })

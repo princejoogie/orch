@@ -5,6 +5,8 @@ import type {
   AddSessionDialogState,
   CollapsedSections,
   DeleteSessionDialogState,
+  DeleteWorktreeDialogState,
+  InterruptSessionDialogState,
   PromptDialogState,
   Selection,
   WorktreeOption,
@@ -24,8 +26,10 @@ export type DashboardStore = {
   searchValue: string
   searchFocused: boolean
   addSessionDialog?: AddSessionDialogState | undefined
+  deleteWorktreeDialog?: DeleteWorktreeDialogState | undefined
   promptDialog?: PromptDialogState | undefined
   deleteDialog?: DeleteSessionDialogState | undefined
+  interruptDialog?: InterruptSessionDialogState | undefined
   hoveredRowId?: string | undefined
   searchClearVersion: number
   addSessionClearVersion: number
@@ -51,14 +55,20 @@ export type DashboardStore = {
   setAddSessionSending: () => void
   setAddSessionError: (error: string) => void
   bumpAddSessionClearVersion: () => void
+  openDeleteWorktreeDialog: (state: DeleteWorktreeDialogState) => void
+  closeDeleteWorktreeDialog: () => void
   openPromptDialog: (state: PromptDialogState) => void
   closePromptDialog: () => void
   setPromptValue: (value: string) => void
   setPromptSending: () => void
+  setPromptLoadingMore: () => void
+  prependPromptMessages: (messages: SessionRow["messages"], hasMoreMessages: boolean) => void
   setPromptError: (error: string) => void
   bumpPromptClearVersion: () => void
   openDeleteDialog: (rows: SessionRow[]) => void
   closeDeleteDialog: () => void
+  openInterruptDialog: (rows: SessionRow[]) => void
+  closeInterruptDialog: () => void
   setHoveredRowId: (rowId?: string | undefined) => void
   toggleCollapsedSection: (section: keyof CollapsedSections) => void
   toggleVisualSelection: (sessionId?: string | undefined) => void
@@ -116,7 +126,7 @@ function createDashboardStore() {
     setSearchFocused: (searchFocused) => set({ searchFocused }),
     bumpSearchClearVersion: () => set((state) => ({ searchClearVersion: state.searchClearVersion + 1 })),
     openAddSessionDialog: (addSessionDialog) => set({ addSessionDialog }),
-    closeAddSessionDialog: () => set({ addSessionDialog: undefined }),
+    closeAddSessionDialog: () => set({ addSessionDialog: undefined, deleteWorktreeDialog: undefined }),
     setAddSessionValue: (value) =>
       set((state) => ({
         addSessionDialog: state.addSessionDialog
@@ -178,6 +188,8 @@ function createDashboardStore() {
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, sending: false, error } : undefined,
       })),
     bumpAddSessionClearVersion: () => set((state) => ({ addSessionClearVersion: state.addSessionClearVersion + 1 })),
+    openDeleteWorktreeDialog: (deleteWorktreeDialog) => set({ deleteWorktreeDialog }),
+    closeDeleteWorktreeDialog: () => set({ deleteWorktreeDialog: undefined }),
     openPromptDialog: (promptDialog) => set({ promptDialog }),
     closePromptDialog: () => set({ promptDialog: undefined }),
     setPromptValue: (value) =>
@@ -188,6 +200,27 @@ function createDashboardStore() {
       set((state) => ({
         promptDialog: state.promptDialog ? omitPromptError({ ...state.promptDialog, sending: true }) : undefined,
       })),
+    setPromptLoadingMore: () =>
+      set((state) => ({
+        promptDialog: state.promptDialog ? { ...state.promptDialog, loadingMorePreview: true } : undefined,
+      })),
+    prependPromptMessages: (messages, hasMoreMessages) =>
+      set((state) => {
+        if (!state.promptDialog) return { promptDialog: undefined }
+        const existingIds = new Set(state.promptDialog.row.messages.map((message) => message.id))
+        const olderMessages = messages.filter((message) => !existingIds.has(message.id))
+        return {
+          promptDialog: {
+            ...state.promptDialog,
+            loadingMorePreview: false,
+            row: {
+              ...state.promptDialog.row,
+              messages: [...olderMessages, ...state.promptDialog.row.messages],
+              hasMoreMessages,
+            },
+          },
+        }
+      }),
     setPromptError: (error) =>
       set((state) => ({
         promptDialog: state.promptDialog ? { ...state.promptDialog, sending: false, error } : undefined,
@@ -195,6 +228,8 @@ function createDashboardStore() {
     bumpPromptClearVersion: () => set((state) => ({ promptClearVersion: state.promptClearVersion + 1 })),
     openDeleteDialog: (rows) => set({ deleteDialog: { rows } }),
     closeDeleteDialog: () => set({ deleteDialog: undefined }),
+    openInterruptDialog: (rows) => set({ interruptDialog: { rows } }),
+    closeInterruptDialog: () => set({ interruptDialog: undefined }),
     setHoveredRowId: (hoveredRowId) => set({ hoveredRowId }),
     toggleCollapsedSection: (section) =>
       set((state) => ({
@@ -333,7 +368,7 @@ function omitPromptError(state: PromptDialogState): PromptDialogState {
     row: state.row,
     value: state.value,
     sending: state.sending,
-    latestUserMessage: state.latestUserMessage,
     loadingPreview: state.loadingPreview,
+    loadingMorePreview: state.loadingMorePreview,
   }
 }

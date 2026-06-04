@@ -39,8 +39,11 @@ import {
   createWorktree,
   deleteSession,
   getProjects,
+  interruptSession,
+  loadLatestMessages,
   removeWorktree,
   sendPrompt,
+  selectTuiSession,
   type ProjectSnapshot,
   type SessionRow,
 } from "../opencode.ts"
@@ -69,7 +72,10 @@ export type DashboardController = {
   openSettingsPage: () => void
   submitAddSession: (value: string) => Promise<void>
   submitPrompt: (value: string) => Promise<void>
+  loadMorePromptMessages: () => Promise<void>
+  confirmDeleteWorktree: () => void
   confirmDeleteSession: () => void
+  confirmInterruptSession: () => void
   executeShortcutAction: (action: ShortcutAction) => boolean
   handleSectionHeaderClick: (section: LaneStatus) => void
   handleSessionRowClick: (row: SessionRow) => void
@@ -151,6 +157,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     [dashboardStore.selectedSessionIds, filteredRows],
   )
   const rowsToDelete = selectedRows.length > 0 ? selectedRows : currentRow ? [currentRow] : []
+  const rowsToInterrupt = (selectedRows.length > 0 ? selectedRows : currentRow ? [currentRow] : []).filter(
+    (row) => row.status === "working",
+  )
   const statusLineCount =
     (projectsQuery.isPending || dashboardStore.sessionListState.pending ? 1 : 0) +
     (projectQueryError || dashboardStore.sessionListState.error ? 1 : 0) +
@@ -193,11 +202,20 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     },
     {
       label: "Delete",
-      shortcut: "d",
+      shortcut: "dd",
       danger: true,
       disabled: rowsToDelete.length === 0,
       run: () => {
         openDeleteSessionDialog()
+      },
+    },
+    {
+      label: "Interrupt",
+      shortcut: "ss",
+      danger: true,
+      disabled: rowsToInterrupt.length === 0,
+      run: () => {
+        openInterruptSessionDialog()
       },
     },
   ]
@@ -225,14 +243,17 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         textInputActive:
           dashboardStore.searchFocused ||
           Boolean(dashboardStore.addSessionDialog) ||
+          Boolean(dashboardStore.deleteWorktreeDialog) ||
           Boolean(dashboardStore.promptDialog) ||
           globalStore.page === "settings",
         menu:
           globalStore.openMenu &&
           !globalStore.shortcutsDialogOpen &&
           !dashboardStore.addSessionDialog &&
+          !dashboardStore.deleteWorktreeDialog &&
           !dashboardStore.promptDialog &&
           !dashboardStore.deleteDialog &&
+          !dashboardStore.interruptDialog &&
           !dashboardStore.searchFocused
             ? {
                 itemCount: activeMenuItems.length,
@@ -261,30 +282,38 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       },
       dashboard: {
         addSessionDialog: dashboardStore.addSessionDialog
-          ? {
-              worktreeCount: dashboardStore.addSessionDialog.worktrees.length + 1,
-              focus: dashboardStore.addSessionDialog.focus,
-              close: dashboardStore.closeAddSessionDialog,
-              toggleFocus: dashboardStore.toggleAddSessionFocus,
-              moveWorktree: (delta) => {
-                const dialog = dashboardStore.addSessionDialog
-                if (!dialog || dialog.worktrees.length === 0) return
-                dashboardStore.setAddSessionWorktreeIndex(
-                  nextIndex(dialog.worktreeIndex, delta, dialog.worktrees.length + 1),
-                )
-              },
-              commitWorktree: () => {
-                const dialog = dashboardStore.addSessionDialog
-                if (!dialog) return
-                dashboardStore.setAddSessionFocus("input")
-              },
-              canRemoveWorktree: canRemoveSelectedAddSessionWorktree(),
-              removeWorktree: () => void removeSelectedAddSessionWorktree(),
-            }
+          ? dashboardStore.deleteWorktreeDialog
+            ? null
+            : {
+                worktreeCount: dashboardStore.addSessionDialog.worktrees.length + 1,
+                focus: dashboardStore.addSessionDialog.focus,
+                close: dashboardStore.closeAddSessionDialog,
+                toggleFocus: dashboardStore.toggleAddSessionFocus,
+                moveWorktree: (delta) => {
+                  const dialog = dashboardStore.addSessionDialog
+                  if (!dialog || dialog.worktrees.length === 0) return
+                  dashboardStore.setAddSessionWorktreeIndex(
+                    nextIndex(dialog.worktreeIndex, delta, dialog.worktrees.length + 1),
+                  )
+                },
+                commitWorktree: () => {
+                  const dialog = dashboardStore.addSessionDialog
+                  if (!dialog) return
+                  dashboardStore.setAddSessionFocus("input")
+                },
+                canRemoveWorktree: canRemoveSelectedAddSessionWorktree(),
+                removeWorktree: openDeleteSelectedAddSessionWorktreeDialog,
+              }
+          : null,
+        deleteWorktreeDialog: dashboardStore.deleteWorktreeDialog
+          ? { close: dashboardStore.closeDeleteWorktreeDialog, confirm: confirmDeleteWorktree }
           : null,
         promptDialog: dashboardStore.promptDialog ? { close: dashboardStore.closePromptDialog } : null,
         deleteSessionDialog: dashboardStore.deleteDialog
           ? { close: dashboardStore.closeDeleteDialog, confirm: () => void confirmDeleteSession() }
+          : null,
+        interruptSessionDialog: dashboardStore.interruptDialog
+          ? { close: dashboardStore.closeInterruptDialog, confirm: () => void confirmInterruptSession() }
           : null,
         search:
           globalStore.page === "dashboard" && dashboardStore.searchFocused
@@ -295,19 +324,23 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           globalStore.openMenu ||
           globalStore.shortcutsDialogOpen ||
           dashboardStore.addSessionDialog ||
+          dashboardStore.deleteWorktreeDialog ||
           dashboardStore.promptDialog ||
           dashboardStore.deleteDialog ||
+          dashboardStore.interruptDialog ||
           dashboardStore.searchFocused
             ? null
             : {
                 tabCount: tabs.length,
                 hasSelection: Boolean(currentRow),
                 hasDeletableSelection: rowsToDelete.length > 0,
+                hasInterruptibleSelection: rowsToInterrupt.length > 0,
                 currentSessionId: currentRow?.id,
                 halfPage: halfPage(tableHeight),
                 refresh: () => void refreshDashboard(),
                 openAddSession: openAddSessionDialog,
                 openDeleteSession: openDeleteSessionDialog,
+                openInterruptSession: openInterruptSessionDialog,
                 executeSelection,
                 openTmux: () => {
                   if (currentRow) void openTmuxSession(currentRow)
@@ -348,8 +381,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           !globalStore.openMenu &&
           !globalStore.shortcutsDialogOpen &&
           !dashboardStore.addSessionDialog &&
+          !dashboardStore.deleteWorktreeDialog &&
           !dashboardStore.promptDialog &&
           !dashboardStore.deleteDialog &&
+          !dashboardStore.interruptDialog &&
           !dashboardStore.searchFocused
             ? {
                 serverCount: globalStore.settingsPage.servers.length,
@@ -427,6 +462,12 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   function openDeleteSessionDialog(): boolean {
     if (rowsToDelete.length === 0) return false
     dashboardStore.openDeleteDialog(rowsToDelete)
+    return true
+  }
+
+  function openInterruptSessionDialog(): boolean {
+    if (rowsToInterrupt.length === 0) return false
+    dashboardStore.openInterruptDialog(rowsToInterrupt)
     return true
   }
 
@@ -560,6 +601,8 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         return true
       case "delete-selected-session":
         return openDeleteSessionDialog()
+      case "interrupt-selected-session":
+        return openInterruptSessionDialog()
       case "start-visual-selection":
         dashboardStore.toggleVisualSelection(currentRow?.id)
         return true
@@ -657,13 +700,27 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       row,
       value: "",
       sending: false,
-      latestUserMessage: row.latestUserMessage,
       loadingPreview: false,
     })
   }
 
   async function openTmuxSession(row: SessionRow) {
     try {
+      try {
+        await selectTuiSession({
+          sessionID: row.id,
+          directory: row.directory,
+          ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
+          serverUrl: globalStore.config.activeServerUrl,
+        })
+      } catch (tuiError) {
+        globalStore.addToast({
+          status: "error",
+          title: "Failed to switch opencode session",
+          detail: errorMessage(tuiError),
+        })
+      }
+
       await openTmuxSessionForRow(row)
     } catch (tmuxError) {
       globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
@@ -711,26 +768,43 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     return Boolean(worktree && worktree.directory !== dialog.projectDirectory)
   }
 
-  async function removeSelectedAddSessionWorktree() {
+  function openDeleteSelectedAddSessionWorktreeDialog() {
     const dialog = dashboardStore.addSessionDialog
     if (!dialog || dialog.sending) return
     const worktree = dialog.worktrees[dialog.worktreeIndex]
     if (!worktree || worktree.directory === dialog.projectDirectory) return
 
-    try {
-      await removeWorktree({
-        projectDirectory: dialog.projectDirectory,
-        worktreeDirectory: worktree.directory,
-        serverUrl: globalStore.config.activeServerUrl,
-      })
-      dashboardStore.removeAddSessionWorktree(worktree.directory)
-      globalStore.addToast({ status: "success", title: "Removed worktree", detail: worktree.name })
-      await refreshDashboard()
-    } catch (removeError) {
-      const detail = errorMessage(removeError)
-      dashboardStore.setAddSessionError(detail)
-      globalStore.addToast({ status: "error", title: "Failed to remove worktree", detail })
-    }
+    dashboardStore.openDeleteWorktreeDialog({ projectDirectory: dialog.projectDirectory, worktree })
+  }
+
+  function confirmDeleteWorktree() {
+    const dialog = dashboardStore.deleteWorktreeDialog
+    if (!dialog) return
+
+    const toastId = globalStore.addToast({
+      status: "loading",
+      title: "Deleting worktree",
+      detail: dialog.worktree.name,
+    })
+
+    dashboardStore.closeDeleteWorktreeDialog()
+
+    void (async () => {
+      try {
+        await removeWorktree({
+          projectDirectory: dialog.projectDirectory,
+          worktreeDirectory: dialog.worktree.directory,
+          serverUrl: globalStore.config.activeServerUrl,
+        })
+        dashboardStore.removeAddSessionWorktree(dialog.worktree.directory)
+        globalStore.updateToast(toastId, { status: "success", title: "Deleted worktree", detail: dialog.worktree.name })
+        await refreshDashboard()
+      } catch (removeError) {
+        const detail = errorMessage(removeError)
+        dashboardStore.setAddSessionError(detail)
+        globalStore.updateToast(toastId, { status: "error", title: "Failed to delete worktree", detail })
+      }
+    })()
   }
 
   async function submitPrompt(value: string) {
@@ -753,6 +827,33 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       const detail = errorMessage(promptError)
       dashboardStore.setPromptError(detail)
       globalStore.addToast({ status: "error", title: "Failed to send prompt", detail })
+    }
+  }
+
+  async function loadMorePromptMessages() {
+    const dialog = dashboardStoreRef.current.promptDialog
+    if (!dialog || dialog.loadingMorePreview || !dialog.row.hasMoreMessages) return
+
+    const oldestMessage = dialog.row.messages[0]
+    if (!oldestMessage) return
+
+    dashboardStoreRef.current.setPromptLoadingMore()
+    try {
+      const messages = await loadLatestMessages({
+        sessionID: dialog.row.id,
+        directory: dialog.row.directory,
+        workspaceID: dialog.row.workspaceID,
+        before: oldestMessage.id,
+        serverUrl: globalStoreRef.current.config.activeServerUrl,
+      })
+      dashboardStoreRef.current.prependPromptMessages(messages.messages, messages.hasMore)
+    } catch (loadError) {
+      dashboardStoreRef.current.prependPromptMessages([], dialog.row.hasMoreMessages)
+      globalStoreRef.current.addToast({
+        status: "error",
+        title: "Failed to load messages",
+        detail: errorMessage(loadError),
+      })
     }
   }
 
@@ -797,6 +898,47 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     })()
   }
 
+  function confirmInterruptSession() {
+    if (!dashboardStore.interruptDialog || dashboardStore.interruptDialog.interrupting) return
+
+    const rows = dashboardStore.interruptDialog.rows
+    const count = rows.length
+    const toastId = globalStore.addToast({
+      status: "loading",
+      title: `Interrupting ${formatSessionCount(count)}`,
+      detail: "Running in background",
+    })
+
+    dashboardStore.clearMultiSelection()
+    dashboardStore.closeInterruptDialog()
+
+    void (async () => {
+      const results = await Promise.allSettled(
+        rows.map((row) =>
+          interruptSession({
+            sessionID: row.id,
+            directory: row.directory,
+            workspaceID: row.workspaceID,
+            serverUrl: globalStore.config.activeServerUrl,
+          }),
+        ),
+      )
+      const failed = results.filter((result) => result.status === "rejected")
+
+      if (failed.length === 0) {
+        globalStore.updateToast(toastId, { status: "success", title: `Interrupted ${formatSessionCount(count)}` })
+      } else {
+        globalStore.updateToast(toastId, {
+          status: "error",
+          title: `Interrupted ${count - failed.length} of ${count} sessions`,
+          detail: String(failed[0]?.reason ?? "Unknown interrupt error"),
+        })
+      }
+
+      await refreshDashboard()
+    })()
+  }
+
   return {
     now,
     listRef,
@@ -818,7 +960,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     openSettingsPage,
     submitAddSession,
     submitPrompt,
+    loadMorePromptMessages,
+    confirmDeleteWorktree,
     confirmDeleteSession,
+    confirmInterruptSession,
     executeShortcutAction,
     handleSectionHeaderClick,
     handleSessionRowClick,

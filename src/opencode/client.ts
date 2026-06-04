@@ -7,6 +7,7 @@ import {
   type SessionMessagesResponse,
 } from "@opencode-ai/sdk/v2"
 import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerUrl } from "../config/orch.ts"
+import type { SessionHistoryMessage } from "./types.ts"
 
 export const DEFAULT_LIMIT = 100
 
@@ -21,6 +22,8 @@ export function opencodeClient(serverUrl = opencodeServerUrl()) {
 export type LatestMessages = {
   userMessage: string
   assistantMessage: string
+  messages: SessionHistoryMessage[]
+  hasMore: boolean
   assistantInfo?: AssistantMessage | undefined
 }
 
@@ -108,24 +111,57 @@ export async function deleteSession(input: {
   )
 }
 
+export async function interruptSession(input: {
+  sessionID: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+}): Promise<void> {
+  await opencodeClient(input.serverUrl).session.abort(
+    {
+      sessionID: input.sessionID,
+      ...routeOptions(input),
+    },
+    { throwOnError: true },
+  )
+}
+
+export async function selectTuiSession(input: {
+  sessionID: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+}): Promise<void> {
+  await opencodeClient(input.serverUrl).tui.selectSession(
+    {
+      sessionID: input.sessionID,
+      ...routeOptions(input),
+    },
+    { throwOnError: true },
+  )
+}
+
 export async function loadLatestMessages(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   limit?: number | undefined
+  before?: string | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
 }): Promise<LatestMessages> {
+  const limit = input.limit ?? 20
   const result = await opencodeClient(input.serverUrl).session.messages(
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
-      limit: input.limit ?? 20,
+      limit,
+      ...(input.before !== undefined ? { before: input.before } : {}),
     },
     { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
   )
 
-  return extractLatestMessages(result.data)
+  return extractLatestMessages(result.data, limit)
 }
 
 export async function loadContextUsage(input: {
@@ -169,10 +205,18 @@ export async function loadContextUsage(input: {
   return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
 }
 
-function extractLatestMessages(messages: SessionMessagesResponse): LatestMessages {
+function extractLatestMessages(messages: SessionMessagesResponse, limit: number): LatestMessages {
   let userMessage = ""
   let assistantMessage = ""
   let assistantInfo: AssistantMessage | undefined
+  const history: SessionHistoryMessage[] = []
+
+  for (const message of messages) {
+    if (message.info.role !== "user" && message.info.role !== "assistant") continue
+
+    const text = textParts(message.parts)
+    if (text) history.push({ id: message.info.id, role: message.info.role, text })
+  }
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -186,7 +230,13 @@ function extractLatestMessages(messages: SessionMessagesResponse): LatestMessage
     if (userMessage && assistantMessage) break
   }
 
-  return { userMessage, assistantMessage, ...(assistantInfo !== undefined ? { assistantInfo } : {}) }
+  return {
+    userMessage,
+    assistantMessage,
+    messages: history,
+    hasMore: messages.length >= limit,
+    ...(assistantInfo !== undefined ? { assistantInfo } : {}),
+  }
 }
 
 function routeOptions(input: { directory?: string | undefined; workspaceID?: string | undefined }) {

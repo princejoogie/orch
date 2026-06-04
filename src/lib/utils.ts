@@ -3,7 +3,7 @@ import { theme } from "../theme.ts"
 
 export { formatDirectory }
 
-export const NEEDS_INPUT_WINDOW_MS = 60 * 60 * 1000
+export const NEEDS_INPUT_WINDOW_MS = 4 * 60 * 60 * 1000
 export const WORKING_MARKERS = [" ", ".", "o", "O", "@", "*", " "]
 
 const WORKTREE_COLORS = [
@@ -38,8 +38,8 @@ export type PromptDialogState = {
   row: SessionRow
   value: string
   sending: boolean
-  latestUserMessage?: string | undefined
   loadingPreview?: boolean | undefined
+  loadingMorePreview?: boolean | undefined
   error?: string | undefined
 }
 
@@ -60,9 +60,20 @@ export type AddSessionDialogState = {
   error?: string | undefined
 }
 
+export type DeleteWorktreeDialogState = {
+  projectDirectory: string
+  worktree: WorktreeOption
+}
+
 export type DeleteSessionDialogState = {
   rows: SessionRow[]
   deleting?: boolean | undefined
+  error?: string | undefined
+}
+
+export type InterruptSessionDialogState = {
+  rows: SessionRow[]
+  interrupting?: boolean | undefined
   error?: string | undefined
 }
 

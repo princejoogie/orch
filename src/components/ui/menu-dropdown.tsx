@@ -8,6 +8,7 @@ export type MenuItem = {
   shortcut: string
   danger?: boolean
   disabled?: boolean
+  background?: string
   run: () => void
 }
 
@@ -34,17 +35,52 @@ export function MenuDropdown({
   onSelect: (index: number) => void
   onClose: () => void
 }) {
-  const visibleItems = items.slice(visibleStart, visibleStart + visibleCount)
-  const shortcutWidth = showShortcuts ? Math.max(8, ...items.map((item) => item.shortcut.length)) : 0
-  const naturalLabelWidth = Math.max(14, ...items.map((item) => item.label.length))
-  const naturalInnerWidth = showShortcuts ? naturalLabelWidth + shortcutWidth + 3 : naturalLabelWidth + 2
-  const innerWidth = maxWidth ? Math.max(1, maxWidth - 2) : naturalInnerWidth
-  const labelWidth = showShortcuts ? Math.max(1, innerWidth - shortcutWidth - 3) : Math.max(1, innerWidth - 2)
+  const innerWidth = menuListWidth(items, showShortcuts, maxWidth ? Math.max(1, maxWidth - 2) : undefined)
   const width = innerWidth + 2
-  const height = visibleItems.length + 2
+  const height = items.slice(visibleStart, visibleStart + visibleCount).length + 2
 
   return (
     <ModalFrame left={left} top={top} width={width} height={height}>
+      <MenuList
+        items={items}
+        selectedIndex={selectedIndex}
+        visibleStart={visibleStart}
+        visibleCount={visibleCount}
+        width={innerWidth}
+        showShortcuts={showShortcuts}
+        onSelect={onSelect}
+        onClose={onClose}
+      />
+    </ModalFrame>
+  )
+}
+
+export function MenuList({
+  items,
+  selectedIndex,
+  visibleStart = 0,
+  visibleCount = items.length,
+  width,
+  showShortcuts = true,
+  onSelect,
+  onClose = () => {},
+}: {
+  items: readonly MenuItem[]
+  selectedIndex: number
+  visibleStart?: number | undefined
+  visibleCount?: number | undefined
+  width?: number | undefined
+  showShortcuts?: boolean | undefined
+  onSelect: (index: number) => void
+  onClose?: (() => void) | undefined
+}) {
+  const visibleItems = items.slice(visibleStart, visibleStart + visibleCount)
+  const rowWidth = menuListWidth(items, showShortcuts, width)
+  const shortcutWidth = showShortcuts ? Math.max(8, ...items.map((item) => item.shortcut.length)) : 0
+  const labelWidth = showShortcuts ? Math.max(1, rowWidth - shortcutWidth - 3) : Math.max(1, rowWidth - 2)
+
+  return (
+    <>
       {visibleItems.map((item, offset) => {
         const index = visibleStart + offset
         return (
@@ -55,14 +91,22 @@ export function MenuDropdown({
             labelWidth={labelWidth}
             shortcutWidth={shortcutWidth}
             showShortcut={showShortcuts}
-            width={innerWidth}
+            width={rowWidth}
             onSelect={() => onSelect(index)}
             onClose={onClose}
           />
         )
       })}
-    </ModalFrame>
+    </>
   )
+}
+
+function menuListWidth(items: readonly MenuItem[], showShortcuts: boolean, width?: number | undefined): number {
+  if (width !== undefined) return Math.max(1, width)
+
+  const shortcutWidth = showShortcuts ? Math.max(8, ...items.map((item) => item.shortcut.length)) : 0
+  const naturalLabelWidth = Math.max(14, ...items.map((item) => item.label.length))
+  return showShortcuts ? naturalLabelWidth + shortcutWidth + 3 : naturalLabelWidth + 2
 }
 
 function MenuDropdownItem({
@@ -86,7 +130,7 @@ function MenuDropdownItem({
 }) {
   const disabled = Boolean(item.disabled)
   const fg = disabled ? theme.border : item.danger ? theme.error : theme.text
-  const bg = selected ? theme.backgroundElement : undefined
+  const bg = selected ? (item.background ?? theme.backgroundElement) : item.background
 
   return (
     <box

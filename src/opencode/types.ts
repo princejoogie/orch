@@ -1,10 +1,18 @@
 export type SessionStatus = "working" | "completed"
 
+export type SessionHistoryMessage = {
+  id: string
+  role: "user" | "assistant"
+  text: string
+}
+
 export type SessionRow = {
   id: string
   title: string
   latestMessage: string
   latestUserMessage: string
+  messages: SessionHistoryMessage[]
+  hasMoreMessages: boolean
   contextTokens?: number | undefined
   contextPercent?: number | undefined
   directory: string

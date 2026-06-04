@@ -98,13 +98,21 @@ export async function getProjectSessions(options: {
 }
 
 type StatusMap = Record<string, OpencodeSessionStatus>
-type SessionDetails = Pick<SessionRow, "latestMessage" | "latestUserMessage" | "contextTokens" | "contextPercent">
-
-async function loadProjectWorktrees(project: OpencodeProject): Promise<WorktreeRow[]> {
-  return worktreeRows(project.worktree, await loadGitWorktreeDirectories(project.worktree))
+type SessionDetails = Pick<
+  SessionRow,
+  "latestMessage" | "latestUserMessage" | "messages" | "hasMoreMessages" | "contextTokens" | "contextPercent"
+>
+type GitWorktree = {
+  directory: string
+  head?: string | undefined
+  branch?: string | undefined
 }
 
-async function loadGitWorktreeDirectories(directory: string): Promise<string[]> {
+async function loadProjectWorktrees(project: OpencodeProject): Promise<WorktreeRow[]> {
+  return worktreeRows(project.worktree, await loadGitWorktrees(project.worktree))
+}
+
+async function loadGitWorktrees(directory: string): Promise<GitWorktree[]> {
   try {
     const process = Bun.spawn(["git", "-C", directory, "worktree", "list", "--porcelain"], {
       stdout: "pipe",
@@ -114,14 +122,43 @@ async function loadGitWorktreeDirectories(directory: string): Promise<string[]> 
     const exitCode = await process.exited
     if (exitCode !== 0) return []
 
-    return output
-      .split("\n")
-      .filter((line) => line.startsWith("worktree "))
-      .map((line) => line.slice("worktree ".length))
-      .filter((path) => path.length > 0)
+    return parseGitWorktrees(output)
   } catch {
     return []
   }
+}
+
+function parseGitWorktrees(output: string): GitWorktree[] {
+  const worktrees: GitWorktree[] = []
+  let current: GitWorktree | undefined
+
+  const flush = () => {
+    if (current) {
+      worktrees.push(current)
+      current = undefined
+    }
+  }
+
+  for (const line of output.split("\n")) {
+    if (line.trim() === "") {
+      flush()
+      continue
+    }
+
+    if (line.startsWith("worktree ")) {
+      flush()
+      current = { directory: line.slice("worktree ".length) }
+      continue
+    }
+
+    if (!current) continue
+
+    if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
+    else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
+  }
+
+  flush()
+  return worktrees.filter((worktree) => worktree.directory.length > 0)
 }
 
 async function loadRecentProjectSessionUpdated(
@@ -147,17 +184,32 @@ async function loadRecentProjectSessionUpdated(
   }
 }
 
-function worktreeRows(primaryDirectory: string, directories: string[]): WorktreeRow[] {
+function worktreeRows(primaryDirectory: string, worktrees: GitWorktree[]): WorktreeRow[] {
   const rows = new Map<string, WorktreeRow>()
-  rows.set(primaryDirectory, { directory: primaryDirectory, name: formatDirectory(primaryDirectory) })
+  const primary = worktrees.find((worktree) => worktree.directory === primaryDirectory)
+  rows.set(primaryDirectory, {
+    directory: primaryDirectory,
+    name: worktreeName(primary) ?? formatDirectory(primaryDirectory),
+  })
 
-  for (const directory of directories) {
-    if (rows.has(directory)) continue
-    rows.set(directory, { directory, name: formatDirectory(directory) })
+  for (const worktree of worktrees) {
+    if (rows.has(worktree.directory)) continue
+    rows.set(worktree.directory, {
+      directory: worktree.directory,
+      name: worktreeName(worktree) ?? formatDirectory(worktree.directory),
+    })
   }
 
-  const [primary, ...rest] = [...rows.values()]
-  return primary ? [primary, ...rest.sort((left, right) => left.name.localeCompare(right.name))] : []
+  const [primaryRow, ...rest] = [...rows.values()]
+  return primaryRow ? [primaryRow, ...rest.sort((left, right) => left.name.localeCompare(right.name))] : []
+}
+
+function worktreeName(worktree: GitWorktree | undefined): string | undefined {
+  return worktree?.branch ?? worktree?.head?.slice(0, 8)
+}
+
+function shortBranch(branch: string): string {
+  return branch.replace(/^refs\/heads\//, "").replace(/^refs\/remotes\//, "")
 }
 
 async function loadStatuses(
@@ -223,13 +275,15 @@ async function loadSessionDetails(
           {
             latestMessage: messages.assistantMessage,
             latestUserMessage: messages.userMessage,
+            messages: messages.messages,
+            hasMoreMessages: messages.hasMore,
             ...(context.tokens !== undefined ? { contextTokens: context.tokens } : {}),
             ...(context.percent !== undefined ? { contextPercent: context.percent } : {}),
           },
         ] as const
       } catch (detailsError) {
         if (isAbortError(detailsError)) throw detailsError
-        return [session.id, { latestMessage: "", latestUserMessage: "" }] as const
+        return [session.id, { latestMessage: "", latestUserMessage: "", messages: [], hasMoreMessages: false }] as const
       }
     }),
   )
@@ -267,6 +321,8 @@ function toRow(
     title: session.title,
     latestMessage: details?.latestMessage ?? "",
     latestUserMessage: details?.latestUserMessage ?? "",
+    messages: details?.messages ?? [],
+    hasMoreMessages: details?.hasMoreMessages ?? false,
     ...(details?.contextTokens !== undefined ? { contextTokens: details.contextTokens } : {}),
     ...(details?.contextPercent !== undefined ? { contextPercent: details.contextPercent } : {}),
     directory: session.directory,

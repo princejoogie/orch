@@ -18,9 +18,9 @@ The keymap system in `src/keymap/` owns keyboard parsing, scoping, dispatch, and
 Keymaps are scoped by mode:
 
 - Help dialog scope handles help close, command selection, and command execution keys.
-- Add-session dialog scope handles cancel, input/selector focus switching, focused worktree selector navigation, selection commit, and focused non-primary worktree removal.
+- Add-session dialog scope handles cancel, input/selector focus switching, focused worktree selector navigation, selection commit, and opening focused non-primary worktree removal confirmation.
 - Prompt dialog scope handles cancel.
-- Delete dialog scope handles confirm/cancel.
+- Delete and interrupt dialog scopes handle confirm/cancel.
 - Settings page scope handles back and server selection.
 - Search scope handles blur.
 - Dashboard list navigation scope handles session/project shortcuts, lane-title collapse, and multi-session selection.
@@ -67,7 +67,8 @@ Disabled bindings count as handled by the keymap. This is intentional: the key s
 - `v` toggles visual session selection. Entering visual mode toggles the focused session, and moving with `j`/`k`/arrows while visual mode is active toggles each focused session.
 - `space` toggles the focused session in the selected set without entering visual mode.
 - `esc` clears visual/multi-selection before it falls back to the normal quit behavior.
-- `d` deletes the selected set when any sessions are checked; otherwise it deletes the focused session.
+- `dd` deletes the selected set when any sessions are checked; otherwise it deletes the focused session.
+- `ss` interrupts the selected working set when any working sessions are checked; otherwise it interrupts the focused working session.
 
 ## Ownership Rules
 
