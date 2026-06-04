@@ -94,7 +94,7 @@ Prompt textareas use explicit key bindings:
 
 Prompt submission is an app-level decision, so textarea submit semantics are explicit instead of inherited from the renderer default.
 
-The prompt-session dialog shows previous session messages in a fixed-height scrollable section above the textarea. The textarea keeps focus for typing; the message section starts at the newest loaded messages, supports mouse-wheel scrolling, and lazy-loads older messages when the user scrolls upward near the top.
+The prompt-session dialog shows previous session messages in a fixed-height scrollable section above the textarea. Messages are grouped by contiguous role with `● User:` or `● Assistant:` headers, and individual messages are separated by a blank line. The textarea keeps focus for typing; the message section starts at the newest loaded messages, supports mouse-wheel scrolling, and lazy-loads older messages when the user scrolls upward near the top.
 
 ## New Session Dialog
 

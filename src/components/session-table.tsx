@@ -168,6 +168,13 @@ function SessionItem({
   const now = useNow(80)
   const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
   const worktreeColor = worktreeColors[row.worktreeName] ?? theme.textMuted
+  const backgroundColor = selected
+    ? theme.backgroundElement
+    : checked
+      ? theme.backgroundPanel
+      : hovered
+        ? theme.backgroundPanel
+        : undefined
 
   return (
     <box
@@ -178,7 +185,7 @@ function SessionItem({
         height: 1,
         overflow: "hidden",
         width,
-        ...(selected || hovered ? { backgroundColor: selected ? theme.backgroundElement : theme.backgroundPanel } : {}),
+        ...(backgroundColor ? { backgroundColor } : {}),
       }}
       onMouseDown={(event) => {
         event.preventDefault()

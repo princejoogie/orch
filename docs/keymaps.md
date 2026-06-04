@@ -65,6 +65,7 @@ Disabled bindings count as handled by the keymap. This is intentional: the key s
 
 - Lane titles are selectable entries. `enter` toggles the selected lane between expanded and collapsed.
 - `v` toggles visual session selection. Entering visual mode toggles the focused session, and moving with `j`/`k`/arrows while visual mode is active toggles each focused session.
+- Checked sessions render with a full-row highlight so visual selection is visible beyond the checkbox marker.
 - `space` toggles the focused session in the selected set without entering visual mode.
 - `esc` clears visual/multi-selection before it falls back to the normal quit behavior.
 - `dd` deletes the selected set when any sessions are checked; otherwise it deletes the focused session.
