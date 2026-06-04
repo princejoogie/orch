@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import { command } from "../src/keymap/command.ts"
-import { dashboardKeymap, type DashboardKeymapCtx } from "../src/keymap/dashboard.ts"
+import {
+  dashboardPageKeymap,
+  globalKeymap,
+  settingsPageKeymap,
+  type DashboardKeymapCtx,
+  type GlobalKeymapCtx,
+  type SettingsKeymapCtx,
+} from "../src/keymap/dashboard.ts"
 import { createDispatcher } from "../src/keymap/dispatcher.ts"
 import { Keymap } from "../src/keymap/keymap.ts"
 import { normalizeOpenTuiKey } from "../src/keymap/opentui-adapter.ts"
@@ -56,7 +63,7 @@ describe("keymap dispatcher", () => {
     const moves: number[] = []
     let executed = false
     let closed = false
-    const ctx: DashboardKeymapCtx = {
+    const ctx: GlobalKeymapCtx = {
       textInputActive: false,
       menu: null,
       helpDialog: {
@@ -69,16 +76,10 @@ describe("keymap dispatcher", () => {
           executed = true
         },
       },
-      addSessionDialog: null,
-      promptDialog: null,
-      deleteSessionDialog: null,
-      settingsDialog: null,
-      search: null,
-      listNav: null,
       clearTextInput: () => false,
       quit: () => {},
     }
-    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+    const dispatcher = createDispatcher(globalKeymap, () => ctx)
 
     expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
@@ -96,7 +97,7 @@ describe("keymap dispatcher", () => {
     const openedMenus: string[] = []
     let executed = false
     let closed = false
-    const ctx: DashboardKeymapCtx = {
+    const ctx: GlobalKeymapCtx = {
       textInputActive: false,
       menu: {
         itemCount: 2,
@@ -110,16 +111,10 @@ describe("keymap dispatcher", () => {
         },
       },
       helpDialog: null,
-      addSessionDialog: null,
-      promptDialog: null,
-      deleteSessionDialog: null,
-      settingsDialog: null,
-      search: null,
-      listNav: null,
       clearTextInput: () => false,
       quit: () => {},
     }
-    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+    const dispatcher = createDispatcher(globalKeymap, () => ctx)
 
     expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
@@ -139,18 +134,15 @@ describe("keymap dispatcher", () => {
     const openedMenus: string[] = []
     let openedSettings = false
     const ctx: DashboardKeymapCtx = {
-      textInputActive: false,
-      menu: null,
-      helpDialog: null,
       addSessionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
-      settingsDialog: null,
       search: null,
       listNav: {
         tabCount: 0,
         hasSelection: false,
         hasDeletableSelection: false,
+        currentSessionId: undefined,
         halfPage: 1,
         refresh: () => {},
         openAddSession: () => {},
@@ -158,7 +150,7 @@ describe("keymap dispatcher", () => {
         executeSelection: () => {},
         openTmux: () => {},
         toggleVisualSelection: () => {},
-        toggleCurrentSelection: () => {},
+        toggleSelectedSession: () => {},
         clearMultiSelection: () => false,
         focusSearch: () => {},
         openHelp: () => {},
@@ -175,16 +167,76 @@ describe("keymap dispatcher", () => {
         quit: () => {},
         toggleConsole: () => {},
       },
-      clearTextInput: () => false,
-      quit: () => {},
     }
-    const dispatcher = createDispatcher(dashboardKeymap, () => ctx)
+    const dispatcher = createDispatcher(dashboardPageKeymap, () => ctx)
 
     expect(dispatcher.dispatch(parseKey("ctrl+s")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("ctrl+p")).kind).toBe("ran")
 
     expect(openedMenus).toEqual(["servers"])
     expect(openedSettings).toBe(true)
+  })
+
+  test("add session dialog tabs between input and worktree selector", () => {
+    const focus: { current: "input" | "worktree" } = { current: "input" }
+    const moves: number[] = []
+    let closed = false
+    const ctx: DashboardKeymapCtx = {
+      addSessionDialog: {
+        worktreeCount: 2,
+        get focus() {
+          return focus.current
+        },
+        close: () => {
+          closed = true
+        },
+        toggleFocus: () => {
+          focus.current = focus.current === "input" ? "worktree" : "input"
+        },
+        moveWorktree: (delta) => moves.push(delta),
+      },
+      promptDialog: null,
+      deleteSessionDialog: null,
+      search: null,
+      listNav: null,
+    }
+    const dispatcher = createDispatcher(dashboardPageKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("no-match")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("worktree")
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("k")).kind).toBe("no-match")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(moves).toEqual([1, 1, -1])
+    expect(closed).toBe(true)
+  })
+
+  test("settings page owns server navigation shortcuts", () => {
+    const moves: number[] = []
+    let closed = false
+    const ctx: SettingsKeymapCtx = {
+      settingsPage: {
+        serverCount: 2,
+        close: () => {
+          closed = true
+        },
+        moveServer: (delta) => moves.push(delta),
+      },
+    }
+    const dispatcher = createDispatcher(settingsPageKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("ctrl+p")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("ctrl+n")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(moves).toEqual([-1, 1])
+    expect(closed).toBe(true)
   })
 
   test("normalizes OpenTUI comma key names", () => {

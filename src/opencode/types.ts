@@ -16,9 +16,28 @@ export type SessionRow = {
   status: SessionStatus
 }
 
+export type WorktreeRow = {
+  directory: string
+  name: string
+}
+
+export type ProjectRow = {
+  id: string
+  title: string
+  directory: string
+  worktreeName: string
+  worktrees: WorktreeRow[]
+  updated: number
+}
+
 export type DashboardSnapshot = {
   rows: SessionRow[]
   serverUrl: string
-  since: number
+  scannedAt: Date
+}
+
+export type ProjectSnapshot = {
+  projects: ProjectRow[]
+  serverUrl: string
   scannedAt: Date
 }

@@ -1,5 +1,6 @@
 import { context } from "./context.ts"
 import { confirmModalBindings } from "./helpers.ts"
+import { Keymap } from "./keymap.ts"
 
 export interface HelpDialogCtx {
   readonly commandCount: number
@@ -18,7 +19,9 @@ export interface MenuCtx {
 
 export interface AddSessionDialogCtx {
   readonly worktreeCount: number
+  readonly focus: "input" | "worktree"
   readonly close: () => void
+  readonly toggleFocus: () => void
   readonly moveWorktree: (delta: -1 | 1) => void
 }
 
@@ -31,7 +34,7 @@ export interface DeleteSessionDialogCtx {
   readonly confirm: () => void
 }
 
-export interface SettingsDialogCtx {
+export interface SettingsPageCtx {
   readonly serverCount: number
   readonly close: () => void
   readonly moveServer: (delta: -1 | 1) => void
@@ -45,14 +48,15 @@ export interface ListNavCtx {
   readonly tabCount: number
   readonly hasSelection: boolean
   readonly hasDeletableSelection: boolean
+  readonly currentSessionId?: string | undefined
   readonly halfPage: number
   readonly refresh: () => void
   readonly openAddSession: () => void
   readonly openDeleteSession: () => void
   readonly executeSelection: () => void
   readonly openTmux: () => void
-  readonly toggleVisualSelection: () => void
-  readonly toggleCurrentSelection: () => void
+  readonly toggleVisualSelection: (sessionId?: string | undefined) => void
+  readonly toggleSelectedSession: (sessionId: string) => void
   readonly clearMultiSelection: () => boolean
   readonly focusSearch: () => void
   readonly openHelp: () => void
@@ -68,27 +72,41 @@ export interface ListNavCtx {
   readonly toggleConsole: () => void
 }
 
-export interface DashboardKeymapCtx {
+export interface GlobalKeymapCtx {
   readonly textInputActive: boolean
   readonly menu: MenuCtx | null
   readonly helpDialog: HelpDialogCtx | null
-  readonly addSessionDialog: AddSessionDialogCtx | null
-  readonly promptDialog: PromptDialogCtx | null
-  readonly deleteSessionDialog: DeleteSessionDialogCtx | null
-  readonly settingsDialog: SettingsDialogCtx | null
-  readonly search: SearchCtx | null
-  readonly listNav: ListNavCtx | null
   readonly clearTextInput: () => boolean
   readonly quit: () => void
 }
 
+export interface DashboardKeymapCtx {
+  readonly addSessionDialog: AddSessionDialogCtx | null
+  readonly promptDialog: PromptDialogCtx | null
+  readonly deleteSessionDialog: DeleteSessionDialogCtx | null
+  readonly search: SearchCtx | null
+  readonly listNav: ListNavCtx | null
+}
+
+export interface SettingsKeymapCtx {
+  readonly settingsPage: SettingsPageCtx | null
+}
+
+export interface AppKeymapCtx {
+  readonly global: GlobalKeymapCtx
+  readonly dashboard: DashboardKeymapCtx
+  readonly settings: SettingsKeymapCtx
+}
+
+const Global = context<GlobalKeymapCtx>()
 const Dashboard = context<DashboardKeymapCtx>()
+const Settings = context<SettingsKeymapCtx>()
 const Menu = context<MenuCtx>()
 const HelpDialog = context<HelpDialogCtx>()
 const AddSessionDialog = context<AddSessionDialogCtx>()
 const PromptDialog = context<PromptDialogCtx>()
 const DeleteSessionDialog = context<DeleteSessionDialogCtx>()
-const SettingsDialog = context<SettingsDialogCtx>()
+const SettingsPage = context<SettingsPageCtx>()
 const Search = context<SearchCtx>()
 const ListNav = context<ListNavCtx>()
 
@@ -145,17 +163,21 @@ const menuKeymap = Menu(
 
 const addSessionDialogKeymap = AddSessionDialog(
   { id: "session-new.cancel", title: "Cancel", keys: ["escape"], run: (ctx) => ctx.close() },
+  { id: "session-new.focus.next", title: "Next field", keys: ["tab"], run: (ctx) => ctx.toggleFocus() },
+  { id: "session-new.focus.previous", title: "Previous field", keys: ["shift+tab"], run: (ctx) => ctx.toggleFocus() },
   {
     id: "session-new.worktree.next",
     title: "Next worktree",
-    keys: ["tab"],
+    keys: ["j", "down", "ctrl+n"],
+    when: (ctx) => ctx.focus === "worktree",
     enabled: (ctx) => ctx.worktreeCount > 1 || "Only one worktree.",
     run: (ctx) => ctx.moveWorktree(1),
   },
   {
     id: "session-new.worktree.previous",
     title: "Previous worktree",
-    keys: ["shift+tab"],
+    keys: ["k", "up", "ctrl+p"],
+    when: (ctx) => ctx.focus === "worktree",
     enabled: (ctx) => ctx.worktreeCount > 1 || "Only one worktree.",
     run: (ctx) => ctx.moveWorktree(-1),
   },
@@ -178,19 +200,19 @@ const deleteSessionDialogKeymap = DeleteSessionDialog(
   { id: "session-delete.confirm-y", title: "Delete session", keys: ["y"], run: (ctx) => ctx.confirm() },
 )
 
-const settingsDialogKeymap = SettingsDialog(
+const settingsPageControlsKeymap = SettingsPage(
   { id: "settings.close", title: "Close settings", keys: ["escape"], run: (ctx) => ctx.close() },
   {
     id: "settings.server.next",
     title: "Next server",
-    keys: ["tab"],
+    keys: ["down", "ctrl+n", "tab"],
     enabled: (ctx) => ctx.serverCount > 1 || "Only one server.",
     run: (ctx) => ctx.moveServer(1),
   },
   {
     id: "settings.server.previous",
     title: "Previous server",
-    keys: ["shift+tab"],
+    keys: ["up", "ctrl+p", "shift+tab"],
     enabled: (ctx) => ctx.serverCount > 1 || "Only one server.",
     run: (ctx) => ctx.moveServer(-1),
   },
@@ -220,12 +242,20 @@ const listNavKeymap = ListNav(
   },
   { id: "sessions.refresh", title: "Refresh sessions", keys: ["r"], run: (ctx) => ctx.refresh() },
   { id: "sessions.new", title: "Create new session", keys: ["a"], run: (ctx) => ctx.openAddSession() },
-  { id: "selection.visual", title: "Toggle visual selection", keys: ["v"], run: (ctx) => ctx.toggleVisualSelection() },
+  {
+    id: "selection.visual",
+    title: "Toggle visual selection",
+    keys: ["v"],
+    run: (ctx) => ctx.toggleVisualSelection(ctx.currentSessionId),
+  },
   {
     id: "selection.toggle",
     title: "Toggle selected session",
     keys: ["space"],
-    run: (ctx) => ctx.toggleCurrentSelection(),
+    enabled: selectedSession,
+    run: (ctx) => {
+      if (ctx.currentSessionId) ctx.toggleSelectedSession(ctx.currentSessionId)
+    },
   },
   {
     id: "sessions.delete",
@@ -251,7 +281,7 @@ const listNavKeymap = ListNav(
   { id: "projects.previous", title: "Previous project", keys: ["shift+tab"], run: (ctx) => ctx.cycleTab(-1) },
   ...tabNumberBindings,
   { id: "selection.down", title: "Move down", keys: ["j", "down", "ctrl+n"], run: (ctx) => ctx.moveSelection(1) },
-  { id: "selection.up", title: "Move up", keys: ["k", "up", "ctrl+p"], run: (ctx) => ctx.moveSelection(-1) },
+  { id: "selection.up", title: "Move up", keys: ["k", "up"], run: (ctx) => ctx.moveSelection(-1) },
   {
     id: "selection.half-down",
     title: "Half page down",
@@ -269,7 +299,7 @@ const listNavKeymap = ListNav(
   { id: "console.toggle", title: "Toggle console", keys: ["`"], run: (ctx) => ctx.toggleConsole() },
 )
 
-export const dashboardKeymap = Dashboard(
+export const globalKeymap = Global(
   {
     id: "app.quit.ctrl-c",
     title: "Quit",
@@ -280,10 +310,20 @@ export const dashboardKeymap = Dashboard(
   },
   menuKeymap.scope((ctx) => ctx.menu),
   helpDialogKeymap.scope((ctx) => ctx.helpDialog),
+)
+
+export const dashboardPageKeymap = Dashboard(
   addSessionDialogKeymap.scope((ctx) => ctx.addSessionDialog),
   promptDialogKeymap.scope((ctx) => ctx.promptDialog),
   deleteSessionDialogKeymap.scope((ctx) => ctx.deleteSessionDialog),
-  settingsDialogKeymap.scope((ctx) => ctx.settingsDialog),
   searchKeymap.scope((ctx) => ctx.search),
-  listNavKeymap.scope((ctx) => !ctx.textInputActive && ctx.listNav),
+  listNavKeymap.scope((ctx) => ctx.listNav),
+)
+
+export const settingsPageKeymap = Settings(settingsPageControlsKeymap.scope((ctx) => ctx.settingsPage))
+
+export const appKeymap = Keymap.union<AppKeymapCtx>(
+  globalKeymap.lift((ctx) => ctx.global),
+  dashboardPageKeymap.lift((ctx) => ctx.dashboard),
+  settingsPageKeymap.lift((ctx) => ctx.settings),
 )

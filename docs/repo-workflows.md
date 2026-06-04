@@ -106,3 +106,28 @@ Tests live in `test/` and should focus on pure logic:
 - utility functions
 
 Prefer testing extracted pure functions over driving the terminal renderer.
+
+## TUI Verification With termctrl
+
+Use `termctrl` for end-to-end checks that depend on visible OpenTUI behavior. Prefer named sessions for multi-step interaction, and always stop the session when finished.
+
+Example workflow:
+
+```sh
+bun run build
+termctrl start orch-test --cols 130 --rows 35 -- $(pwd)/dist/orch
+termctrl wait orch-test "Projects" --timeout 5000
+termctrl show orch-test
+termctrl send orch-test text:a
+termctrl wait orch-test "New session" --timeout 5000
+termctrl show orch-test
+termctrl send orch-test tab
+termctrl show orch-test
+termctrl send orch-test text:j
+termctrl show orch-test
+termctrl send orch-test tab
+termctrl show orch-test
+termctrl stop orch-test
+```
+
+Use this style when changing keyboard focus, dialogs, menus, sidebars, scroll behavior, or any behavior where text output alone is not enough. Capture evidence from `termctrl show`; do not rely on logs for alternate-screen TUIs.

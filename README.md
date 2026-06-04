@@ -104,13 +104,15 @@ orch --version
 
 - `up` / `down`: move selection
 - `k` / `j`: move selection
-- `ctrl-p` / `ctrl-n`: move selection
+- `ctrl-n`: move selection down
 - `ctrl-u` / `ctrl-d`: half page up or down
 - `gg` / `G`: jump to first or last session
 - `home` / `end`: jump to first or last session
 - `tab` / `shift-tab`: switch project tab
 - `1`-`9`: select project tab by index
 - `/`: focus search
+- `ctrl-s`: open server selector
+- `ctrl-p`: open settings
 - `?`: open keyboard shortcut help
 - `enter`: prompt the selected session
 - `a`: create a new session in the active project
@@ -123,13 +125,20 @@ orch --version
 Prompt dialogs:
 
 - `enter`: send prompt
-- `ctrl-s`: send prompt
 - `shift-enter`: insert newline
 - `esc`: cancel
 
+Settings page:
+
+- `tab` / `shift-tab`: switch selected server
+- `up` / `down`: switch selected server
+- `ctrl-p` / `ctrl-n`: switch selected server
+- `enter`: add server from the input
+- `esc`: return to dashboard
+
 ## How It Works
 
-`orch` talks to opencode through `@opencode-ai/sdk`. It lists recent unarchived global sessions from the last 24 hours, loads session statuses, and enriches rows with latest messages and context usage.
+`orch` talks to opencode through `@opencode-ai/sdk`. It lists projects and project worktrees through the SDK, then loads sessions from the last week, statuses, latest messages, and context usage only for the selected project.
 
 Sessions are grouped into project tabs and lanes:
 

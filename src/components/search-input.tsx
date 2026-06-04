@@ -1,36 +1,41 @@
 import { type InputRenderable } from "@opentui/core"
 import { useEffect, useRef } from "react"
-import type { SearchInputProps } from "../../lib/utils.ts"
-import { theme } from "../../theme.ts"
+import { useDashboardStore } from "../store/dashboard.ts"
+import { theme } from "../theme.ts"
 
-export function SearchInput({ value, focused, width, clearVersion, onInput, onFocus }: SearchInputProps) {
+export function SearchInput({ width }: { width: number }) {
+  const dashboardStore = useDashboardStore()
   const inputRef = useRef<InputRenderable>(null)
   const inputWidth = Math.min(44, Math.max(16, width))
 
   useEffect(() => {
     const input = inputRef.current
     if (input && input.plainText.length > 0) input.setText("")
-  }, [clearVersion])
+  }, [dashboardStore.searchClearVersion])
 
   return (
     <box style={{ flexDirection: "row", flexShrink: 0 }}>
       <box
         style={{
           border: true,
-          borderColor: focused ? theme.borderActive : value ? theme.border : theme.borderSubtle,
+          borderColor: dashboardStore.searchFocused
+            ? theme.borderActive
+            : dashboardStore.searchValue
+              ? theme.border
+              : theme.borderSubtle,
           height: 3,
           paddingLeft: 1,
           paddingRight: 1,
           width: inputWidth,
         }}
-        onMouseDown={onFocus}
+        onMouseDown={() => dashboardStore.setSearchFocused(true)}
       >
         <input
           ref={inputRef}
-          focused={focused}
+          focused={dashboardStore.searchFocused}
           placeholder="Search sessions"
           style={{ width: inputWidth - 4 }}
-          onInput={onInput}
+          onInput={dashboardStore.setSearchValue}
         />
       </box>
     </box>

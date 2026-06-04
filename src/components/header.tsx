@@ -1,23 +1,17 @@
 import { TextAttributes } from "@opentui/core"
+import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
 import { mouseAction } from "./ui/button.tsx"
 import { countLane, shortcutHintLine } from "../lib/utils.ts"
-import type { DashboardSnapshot } from "../opencode.ts"
+import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
 
-export function Header({
-  snapshot,
-  width,
-  active,
-  onServerPress,
-}: {
-  snapshot?: DashboardSnapshot | undefined
-  width: number
-  active?: boolean | undefined
-  onServerPress: () => void
-}) {
-  const rows = snapshot?.rows ?? []
+export function Header({ width }: { width: number }) {
+  const controller = useDashboardControllerContext()
+  const globalStore = useGlobalStore()
   const now = Date.now()
-  const serverUrl = snapshot?.serverUrl ?? "http://localhost:4096"
+  const rows = controller.activeProjectRows
+  const serverUrl = controller.projectSnapshot?.serverUrl ?? globalStore.config.activeServerUrl
+  const active = globalStore.openMenu === "servers"
 
   return (
     <box
@@ -31,7 +25,7 @@ export function Header({
         style={{ height: 1, width }}
         onMouseDown={(event) => {
           mouseAction(event)
-          onServerPress()
+          globalStore.toggleMenu("servers")
         }}
       >
         <text

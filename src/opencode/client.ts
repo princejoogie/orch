@@ -8,7 +8,7 @@ import {
 } from "@opencode-ai/sdk/v2"
 import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerUrl } from "../config/orch.ts"
 
-export const DEFAULT_LIMIT = 300
+export const DEFAULT_LIMIT = 100
 
 export function opencodeServerUrl(): string {
   return defaultOpencodeServerUrl()
@@ -85,6 +85,7 @@ export async function loadLatestMessages(input: {
   workspaceID?: string | undefined
   limit?: number | undefined
   serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
 }): Promise<LatestMessages> {
   const result = await opencodeClient(input.serverUrl).session.messages(
     {
@@ -92,7 +93,7 @@ export async function loadLatestMessages(input: {
       ...routeOptions(input),
       limit: input.limit ?? 20,
     },
-    { throwOnError: true },
+    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
   )
 
   return extractLatestMessages(result.data)
@@ -104,6 +105,7 @@ export async function loadContextUsage(input: {
   workspaceID?: string | undefined
   historyAssistantMessage?: AssistantMessage | undefined
   serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
 }): Promise<{ tokens?: number; percent?: number }> {
   const client = opencodeClient(input.serverUrl)
   const [context, providers] = await Promise.all([
@@ -112,9 +114,12 @@ export async function loadContextUsage(input: {
         sessionID: input.sessionID,
         ...routeOptions(input),
       },
-      { throwOnError: true },
+      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
     ),
-    client.config.providers(routeOptions(input), { throwOnError: true }),
+    client.config.providers(routeOptions(input), {
+      throwOnError: true,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    }),
   ])
 
   const latestAssistant = latestAssistantMessage(context.data)

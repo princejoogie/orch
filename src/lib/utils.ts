@@ -1,4 +1,4 @@
-import { formatDirectory, type SessionRow, type SessionStatus } from "../opencode.ts"
+import { formatDirectory, type ProjectRow, type SessionRow, type SessionStatus } from "../opencode.ts"
 import { theme } from "../theme.ts"
 
 export { formatDirectory }
@@ -53,6 +53,7 @@ export type AddSessionDialogState = {
   projectTitle: string
   worktrees: WorktreeOption[]
   worktreeIndex: number
+  focus: "input" | "worktree"
   value: string
   sending: boolean
   error?: string | undefined
@@ -69,20 +70,13 @@ export type WrappedLine = {
   text: string
 }
 
-export type SearchInputProps = {
-  value: string
-  focused: boolean
-  width: number
-  clearVersion: number
-  onInput: (value: string) => void
-  onFocus: () => void
-}
-
 export type ProjectTab = {
   id: string
   title: string
+  directory: string
   rows: SessionRow[]
   worktreeColors: Record<string, string>
+  worktrees: WorktreeOption[]
 }
 
 export const SECTIONS: Section[] = [
@@ -196,10 +190,6 @@ export function tabElementId(tab: ProjectTab): string {
   return `tab-${tab.id}`
 }
 
-export function count(rows: SessionRow[], status: SessionStatus): number {
-  return rows.filter((row) => row.status === status).length
-}
-
 export function countLane(rows: SessionRow[], status: LaneStatus, now: Date | number): number {
   return rows.filter((row) => rowInLane(row, status, now)).length
 }
@@ -214,46 +204,27 @@ export function context(row: SessionRow): string {
   return formatDirectory(row.directory)
 }
 
-export function groupRowsByProject(rows: SessionRow[]): ProjectTab[] {
-  const tabs = new Map<string, ProjectTab>()
-  for (const row of rows) {
-    const id = `${row.projectID}\t${row.workspaceID ?? ""}`
-    const existing = tabs.get(id)
-    if (existing) {
-      existing.rows.push(row)
-      continue
-    }
-
-    tabs.set(id, {
-      id,
-      title: row.projectTitle,
-      rows: [row],
-      worktreeColors: {},
+export function projectTabs(projects: ProjectRow[], rowsByProjectId: Record<string, SessionRow[]>): ProjectTab[] {
+  return [...projects]
+    .sort((left, right) => right.updated - left.updated || left.title.localeCompare(right.title))
+    .map((project) => {
+      const projectRows = rowsByProjectId[project.id] ?? []
+      return {
+        id: project.id,
+        title: project.title,
+        directory: project.directory,
+        rows: projectRows,
+        worktreeColors: assignWorktreeColors(projectRows),
+        worktrees:
+          project.worktrees.length > 0
+            ? project.worktrees
+            : [{ directory: project.directory, name: project.worktreeName }],
+      }
     })
-  }
-  return [...tabs.values()]
-    .sort((left, right) => latestActivity(right.rows) - latestActivity(left.rows) || left.id.localeCompare(right.id))
-    .map((tab) => ({ ...tab, worktreeColors: assignWorktreeColors(tab.rows) }))
-}
-
-function latestActivity(rows: SessionRow[]): number {
-  return Math.max(...rows.map((row) => row.updated))
 }
 
 export function worktreeOptions(tab?: ProjectTab): WorktreeOption[] {
-  if (!tab) return []
-
-  const options = new Map<string, WorktreeOption>()
-  for (const row of tab.rows) {
-    const id = `${row.directory}\t${row.workspaceID ?? ""}`
-    if (options.has(id)) continue
-    options.set(id, {
-      directory: row.directory,
-      ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
-      name: row.worktreeName,
-    })
-  }
-  return [...options.values()].sort((left, right) => left.name.localeCompare(right.name))
+  return tab?.worktrees ?? []
 }
 
 function assignWorktreeColors(rows: SessionRow[]): Record<string, string> {

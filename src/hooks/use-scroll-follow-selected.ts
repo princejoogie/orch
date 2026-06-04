@@ -1,11 +1,11 @@
 import type { ScrollBoxRenderable } from "@opentui/core"
-import { useLayoutEffect, type MutableRefObject } from "react"
+import { useLayoutEffect, type RefObject } from "react"
 import { scrollTopForVisibleLine } from "../lib/scroll.ts"
 
 const MAX_SCROLL_MEASURE_ATTEMPTS = 20
 
 export function useScrollFollowSelected(
-  scrollRef: MutableRefObject<ScrollBoxRenderable | null>,
+  scrollRef: RefObject<ScrollBoxRenderable | null>,
   selectedLine: number | null,
   margin: number,
 ): void {

@@ -1,42 +1,28 @@
+import { TextAttributes } from "@opentui/core"
 import {
   DialogError,
   DialogLabel,
-  DialogOption,
   DialogTextarea,
   DialogTextLines,
   fitCell,
   HintRow,
   PlainLine,
   StandardDialogFrame,
+  TextLine,
 } from "./ui/dialog.tsx"
-import { Button, ButtonRow, ButtonSpacer, DialogFooterActions } from "./ui/button.tsx"
-import {
-  clamp,
-  truncate,
-  wrapText,
-  type AddSessionDialogState,
-  type DeleteSessionDialogState,
-  type PromptDialogState,
-} from "../lib/utils.ts"
+import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
+import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
+import { clamp, truncate, wrapText, type WorktreeOption } from "../lib/utils.ts"
+import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
 
-export function PromptDialog({
-  state,
-  width,
-  height,
-  onInput,
-  onSubmit,
-  onCancel,
-  clearVersion,
-}: {
-  state: PromptDialogState
-  width: number
-  height: number
-  onInput: (value: string) => void
-  onSubmit: (value: string) => void
-  onCancel: () => void
-  clearVersion: number
-}) {
+export function PromptDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.promptDialog
+
+  if (!state) return null
+
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
   const previewHeight = 3
@@ -61,7 +47,7 @@ export function PromptDialog({
       title="Prompt session"
       headerRight={state.sending ? "sending" : undefined}
       subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
-      onClose={onCancel}
+      onClose={dashboardStore.closePromptDialog}
       footer={
         <DialogFooterActions
           width={dialogWidth - 4}
@@ -74,10 +60,10 @@ export function PromptDialog({
               shortcut="↵"
               width={10}
               disabled={state.sending || state.value.trim().length === 0}
-              onPress={() => onSubmit(state.value)}
+              onPress={() => void controller.submitPrompt(state.value)}
             />
             <ButtonSpacer />
-            <Button label="Cancel" shortcut="esc" width={14} onPress={onCancel} />
+            <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closePromptDialog} />
           </ButtonRow>
         </DialogFooterActions>
       }
@@ -91,44 +77,35 @@ export function PromptDialog({
         placeholder={state.sending ? "Sending..." : "Type prompt"}
         focused={!state.sending}
         height={inputHeight}
-        clearVersion={clearVersion}
-        onInput={onInput}
-        onSubmit={onSubmit}
+        clearVersion={dashboardStore.promptClearVersion}
+        onInput={dashboardStore.setPromptValue}
+        onSubmit={(value) => void controller.submitPrompt(value)}
       />
       <DialogError error={state.error} width={dialogWidth} />
     </StandardDialogFrame>
   )
 }
 
-export function AddSessionDialog({
-  state,
-  width,
-  height,
-  onInput,
-  onSubmit,
-  onWorktreeSelect,
-  onCancel,
-  clearVersion,
-}: {
-  state: AddSessionDialogState
-  width: number
-  height: number
-  onInput: (value: string) => void
-  onSubmit: (value: string) => void
-  onWorktreeSelect: (index: number) => void
-  onCancel: () => void
-  clearVersion: number
-}) {
+export function AddSessionDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.addSessionDialog
+
+  if (!state) return null
+
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
   const inputBlockHeight = inputHeight + 3
-  const worktreeLines = Math.min(state.worktrees.length, 6)
+  const selectorFocused = state.focus === "worktree"
+  const worktreeLines = selectorFocused ? Math.min(state.worktrees.length, 6) : 0
+  const worktreeDropdownHeight = worktreeLines > 0 ? worktreeLines + 2 : 0
   const worktreeStart = clamp(
     state.worktreeIndex - worktreeLines + 1,
     0,
     Math.max(0, state.worktrees.length - worktreeLines),
   )
-  const bodyHeight = 1 + worktreeLines + inputBlockHeight + (state.error ? 1 : 0)
+  const selectorWidth = Math.max(1, dialogWidth - 6)
+  const bodyHeight = 1 + 3 + worktreeDropdownHeight + inputBlockHeight + (state.error ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 7))
 
   return (
@@ -141,7 +118,7 @@ export function AddSessionDialog({
       title="New session"
       headerRight={state.sending ? "creating" : undefined}
       subtitle={<PlainLine text={fitCell(state.projectTitle, dialogWidth - 4)} fg={theme.textMuted} />}
-      onClose={onCancel}
+      onClose={dashboardStore.closeAddSessionDialog}
       footer={
         <DialogFooterActions
           width={dialogWidth - 4}
@@ -149,7 +126,8 @@ export function AddSessionDialog({
           hints={
             <HintRow
               items={[
-                { key: "tab", label: "worktree" },
+                { key: "tab", label: "focus" },
+                { key: "j/k", label: "worktree", when: selectorFocused, disabled: state.worktrees.length <= 1 },
                 { key: "shift-enter", label: "newline" },
               ]}
             />
@@ -161,56 +139,142 @@ export function AddSessionDialog({
               shortcut="↵"
               width={12}
               disabled={state.sending || state.value.trim().length === 0}
-              onPress={() => onSubmit(state.value)}
+              onPress={() => void controller.submitAddSession(state.value)}
             />
             <ButtonSpacer />
-            <Button label="Cancel" shortcut="esc" width={14} onPress={onCancel} />
+            <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closeAddSessionDialog} />
           </ButtonRow>
         </DialogFooterActions>
       }
     >
       <DialogLabel>Worktree</DialogLabel>
-      <box style={{ flexDirection: "column", height: worktreeLines }}>
-        {state.worktrees.slice(worktreeStart, worktreeStart + worktreeLines).map((worktree, offset) => {
-          const index = worktreeStart + offset
-          return (
-            <DialogOption
-              key={`${worktree.directory}:${worktree.workspaceID ?? ""}`}
-              selected={index === state.worktreeIndex}
-              onSelect={() => onWorktreeSelect(index)}
-            >
-              {truncate(worktree.name, dialogWidth - 6)}
-            </DialogOption>
-          )
-        })}
-      </box>
+      <WorktreeSelector
+        width={selectorWidth}
+        worktrees={state.worktrees}
+        selectedIndex={state.worktreeIndex}
+        focused={selectorFocused}
+        visibleStart={worktreeStart}
+        visibleCount={worktreeLines}
+        onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
+        onSelect={dashboardStore.setAddSessionWorktreeIndex}
+        onCommit={(index) => {
+          dashboardStore.setAddSessionWorktreeIndex(index)
+          dashboardStore.setAddSessionFocus("input")
+        }}
+      />
       <DialogTextarea
         value={state.value}
         placeholder={state.sending ? "Creating..." : "Type first prompt"}
-        focused={!state.sending}
+        focused={!state.sending && state.focus === "input"}
         height={inputHeight}
-        clearVersion={clearVersion}
-        onInput={onInput}
-        onSubmit={onSubmit}
+        clearVersion={dashboardStore.addSessionClearVersion}
+        onInput={dashboardStore.setAddSessionValue}
+        onSubmit={(value) => void controller.submitAddSession(value)}
       />
       <DialogError error={state.error} width={dialogWidth} />
     </StandardDialogFrame>
   )
 }
 
-export function DeleteSessionDialog({
-  state,
+function WorktreeSelector({
   width,
-  height,
-  onConfirm,
-  onCancel,
+  worktrees,
+  selectedIndex,
+  focused,
+  visibleStart,
+  visibleCount,
+  onFocus,
+  onSelect,
+  onCommit,
 }: {
-  state: DeleteSessionDialogState
   width: number
-  height: number
-  onConfirm: () => void
-  onCancel: () => void
+  worktrees: WorktreeOption[]
+  selectedIndex: number
+  focused: boolean
+  visibleStart: number
+  visibleCount: number
+  onFocus: () => void
+  onSelect: (index: number) => void
+  onCommit: (index: number) => void
 }) {
+  const selected = worktrees[selectedIndex]
+  const fieldWidth = Math.max(1, width - 2)
+  const selectedName = selected?.name ?? "No worktrees"
+
+  return (
+    <>
+      <box
+        style={{
+          height: 3,
+          width,
+          border: true,
+          borderColor: focused ? theme.info : theme.borderSubtle,
+          paddingLeft: 1,
+          paddingRight: 1,
+          marginBottom: focused ? 0 : 1,
+        }}
+        onMouseDown={(event) => {
+          mouseAction(event)
+          onFocus()
+        }}
+      >
+        <TextLine width={fieldWidth} bg={focused ? theme.backgroundElement : undefined}>
+          <span fg={selected ? theme.text : theme.textMuted} {...(focused ? { attributes: TextAttributes.BOLD } : {})}>
+            {fitCell(selectedName, Math.max(1, fieldWidth - 2))}
+          </span>
+          <span fg={focused ? theme.primary : theme.textMuted}> v</span>
+        </TextLine>
+      </box>
+      {focused && visibleCount > 0 ? (
+        <box
+          style={{
+            flexDirection: "column",
+            height: visibleCount + 2,
+            width,
+            border: true,
+            borderColor: theme.borderSubtle,
+            paddingLeft: 1,
+            paddingRight: 1,
+            marginBottom: 1,
+          }}
+        >
+          {worktrees.slice(visibleStart, visibleStart + visibleCount).map((worktree, offset) => {
+            const index = visibleStart + offset
+            const selectedOption = index === selectedIndex
+            return (
+              <box
+                key={`${worktree.directory}:${worktree.workspaceID ?? ""}`}
+                style={{ height: 1, width: fieldWidth }}
+                onMouseOver={() => onSelect(index)}
+                onMouseDown={(event) => {
+                  mouseAction(event)
+                  onCommit(index)
+                }}
+              >
+                <TextLine width={fieldWidth} bg={selectedOption ? theme.backgroundElement : undefined}>
+                  <span
+                    fg={selectedOption ? theme.text : theme.textMuted}
+                    {...(selectedOption ? { attributes: TextAttributes.BOLD } : {})}
+                  >
+                    {fitCell(`${selectedOption ? ">" : " "} ${truncate(worktree.name, fieldWidth - 3)}`, fieldWidth)}
+                  </span>
+                </TextLine>
+              </box>
+            )
+          })}
+        </box>
+      ) : null}
+    </>
+  )
+}
+
+export function DeleteSessionDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.deleteDialog
+
+  if (!state) return null
+
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.55)), 72, width - 4)
   const bodyHeight = state.error ? 4 : 3
   const dialogHeight = bodyHeight + 7
@@ -230,7 +294,7 @@ export function DeleteSessionDialog({
       title={title}
       headerRight={state.deleting ? "deleting" : "destructive"}
       subtitle={<PlainLine text={fitCell(subtitle, dialogWidth - 4)} fg={theme.textMuted} />}
-      onClose={onCancel}
+      onClose={dashboardStore.closeDeleteDialog}
       footer={
         <DialogFooterActions width={dialogWidth - 4} actionsWidth={33}>
           <ButtonRow width={33}>
@@ -240,10 +304,16 @@ export function DeleteSessionDialog({
               width={14}
               danger
               disabled={Boolean(state.deleting)}
-              onPress={onConfirm}
+              onPress={controller.confirmDeleteSession}
             />
             <ButtonSpacer />
-            <Button label="Cancel" shortcut="esc/n" width={18} disabled={Boolean(state.deleting)} onPress={onCancel} />
+            <Button
+              label="Cancel"
+              shortcut="esc/n"
+              width={18}
+              disabled={Boolean(state.deleting)}
+              onPress={dashboardStore.closeDeleteDialog}
+            />
           </ButtonRow>
         </DialogFooterActions>
       }

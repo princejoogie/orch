@@ -10,19 +10,26 @@ These are the OpenTUI/React interaction rules for `orch`.
 - `useKittyKeyboard: {}` keeps modifier handling reliable.
 - `useMouse: true` enables click, hover, and wheel behavior.
 - `openConsoleOnError: true` preserves a debugging escape hatch.
+- `onDestroy` clears the React Query client before resolving shutdown so query timers and in-flight requests do not keep Bun alive.
 
 Renderer configuration is process-level behavior. Components should access renderer state through `useRenderer`, `useTerminalDimensions`, keymap hooks, and refs rather than creating alternate renderer setup paths.
+
+## Shell Layout
+
+`src/tui.tsx` owns terminal dimensions and shell layout. It computes main panel width, sidebar width, content height, table width, and table height, then renders focused shell children such as `TopMenuBar`, `DashboardPage`, `SettingsPage`, `Sidebar`, `AppMenus`, `AppDialogs`, and `Toast`.
+
+Shell children should own their feature state wiring. Do not pass global or dashboard store values from `src/tui.tsx` into child components; a child that needs store state calls `useGlobalStore` or `useDashboardStore` directly. Passing layout metrics from the shell is allowed.
 
 ## Keyboard Ownership
 
 Keyboard actions belong to keymaps, not focused OpenTUI widgets.
 
 - Global keyboard input flows through `src/keymap/opentui-adapter.ts`.
-- Scoped actions live in `src/keymap/dashboard.ts`.
+- Global, dashboard page, and settings page actions live in `src/keymap/dashboard.ts`.
 - The adapter calls `preventDefault()` when a keymap handles a stroke.
 - Text-entry widgets still receive printable text because text-editing modes are scoped out of list keymaps.
 
-Command keys are routed through keymap contexts. Feature components should describe the state and actions a command needs, then expose them through the relevant keymap context.
+Command keys are routed through keymap contexts. Feature components should describe the state and actions a command needs, then expose them through the relevant global or page keymap context.
 
 ## Focus
 
@@ -52,12 +59,13 @@ Mouse wheel scrolling should remain scrollbox-owned unless a custom-scrolled mod
 
 ## Inputs
 
-Search uses OpenTUI `<input>` and prompt dialogs use `<textarea>`.
+Search uses OpenTUI `<input>` and prompt/new-session dialogs use `<textarea>`.
 
 - Keep app shortcuts gated by `textInputActive`.
 - Textarea submit bindings are explicit: enter submits and shift-enter inserts a newline.
 - Ctrl-C clears the active search, prompt, or new-session input when it has text; if the input is already empty, ctrl-C falls through to the normal app-level quit behavior.
 - Single-line search should stay live via `onInput`, not commit-only `onChange`.
 - Do not replay app state into inputs after `onInput`; only write into the widget for explicit app-owned resets such as Ctrl-C clearing.
+- The new-session dialog owns focus state between its textarea and worktree selector. `tab` changes dialog focus; selector navigation keys are scoped out while the textarea is focused.
 
 If we add custom query modals later, route raw text input through one dispatcher rather than several independent keyboard hooks.

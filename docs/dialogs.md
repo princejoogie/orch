@@ -5,11 +5,16 @@ Dialogs use a drawn frame and a small set of reusable primitives in `src/compone
 ## Ownership
 
 - `src/components/ui/dialog.tsx`: shared frame, text rows, dividers, hint rows, textarea, and generic dialog primitives.
+- `src/components/app-dialogs.tsx`: shell overlay component that renders all app dialogs with only screen dimensions from the shell.
 - `src/components/session-dialogs.tsx`: session workflow dialogs: prompt, add session, delete session.
-- `src/components/settings-dialog.tsx`: settings for persisted opencode servers and active server selection.
-- `src/components/shortcuts-dialog.tsx`: keyboard shortcut/help dialog and shortcut data.
+- `src/components/shortcuts.ts`: keyboard shortcut/help metadata and command action identifiers.
+- `src/components/shortcuts-dialog.tsx`: keyboard shortcut/help dialog rendering.
 
 Dialog modules are organized by product behavior. Shared rendering primitives live in UI modules, feature dialogs live with their feature, and app-wide command/help surfaces live with command metadata.
+
+Feature dialogs read their own store state and controller actions. Do not pass dialog store state or store actions down from `src/tui.tsx`.
+
+Settings are not a modal dialog. `src/pages/settings.tsx` owns the full-page settings UI for persisted opencode servers and active server selection.
 
 ## Shared Frames
 
@@ -61,13 +66,13 @@ This keeps the style consistent with the shortcuts dialog and future command pal
 
 ## Shortcut Dialog
 
-Shortcut metadata lives next to the shortcut UI in `src/components/shortcuts-dialog.tsx`.
-The dialog is selectable: up/down or tab keys cycle through commands, and enter runs the selected command through the dashboard keymap context.
+Shortcut metadata lives in `src/components/shortcuts.ts`.
+The dialog is selectable: up/down or tab keys cycle through commands, and enter runs the selected command through the app keymap context.
 
 When adding a user-facing shortcut:
 
 1. Add the binding in `src/keymap/dashboard.ts`.
-2. Add the displayed shortcut in `src/components/shortcuts-dialog.tsx`.
+2. Add the displayed shortcut in `src/components/shortcuts.ts`.
 3. Keep scope grouping meaningful: `Session`, `Navigation`, `Projects`, or `App`.
 
 ## Mouse In Dialogs
@@ -88,3 +93,12 @@ Prompt textareas use explicit key bindings:
 - shift-enter inserts newline
 
 Prompt submission is an app-level decision, so textarea submit semantics are explicit instead of inherited from the renderer default.
+
+## New Session Dialog
+
+The new-session dialog starts with focus in the prompt textarea.
+
+- `tab` and `shift-tab` switch focus between the prompt textarea and worktree selector.
+- The worktree selector renders as a dropdown while focused.
+- `j`/`k`, `down`/`up`, and `ctrl-n`/`ctrl-p` cycle worktrees only while the worktree selector is focused.
+- Printable keys are not captured by worktree navigation while the prompt textarea is focused.

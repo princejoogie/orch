@@ -4,20 +4,25 @@ This document defines where code belongs.
 
 ## Top-Level Source Areas
 
-- `src/pages/`: screen-level composition and state wiring.
+- `src/pages/`: screen-level composition and page UI.
 - `src/components/`: reusable or feature-specific UI components.
 - `src/components/ui/`: generic visual primitives with no feature ownership.
 - `src/hooks/`: React hooks that encapsulate lifecycle or renderer/ref behavior.
 - `src/keymap/`: keyboard parsing, dispatch, adapters, and app keymaps.
-- `src/config/`: orch config/state file paths, JSON persistence, and config normalization.
+- `src/store/`: Zustand stores for app-wide UI state and dashboard page state.
+- `src/config/`: orch config/state file paths, JSON persistence, config normalization, and shared UI/page constants.
 - `src/lib/`: pure utilities and domain-agnostic helpers.
 - `src/opencode/`: opencode API client, snapshot loading, and related types.
 - `scripts/`: build, release, smoke, and maintenance scripts.
 - `test/`: Bun tests for pure behavior and workflow-critical utilities.
 
+`src/tui.tsx` owns process-level renderer setup and the app shell layout: terminal dimensions, main/sidebar widths, top-menu placement, route switching, and shell overlays.
+
 ## Page Components
 
-`src/pages/dashboard.tsx` is allowed to compose state, data, keymap contexts, and layout.
+`src/pages/dashboard.tsx` owns only the dashboard page surface. It renders the dashboard table/scrollbox using layout metrics from the shell; app shell layout, sidebar, top menu, toasts, and modal overlays do not belong in the dashboard page file.
+
+`src/pages/settings.tsx` owns the full-page settings UI. Settings routing and persisted config state live in the global store because settings is an app page, not a dashboard dialog. The settings page reads the global store and `src/hooks/use-settings-controller.tsx` directly instead of receiving store state or depending on dashboard page logic.
 
 Low-level behavior belongs in focused modules:
 
@@ -36,10 +41,17 @@ Use feature-specific component files for feature-specific data.
 Examples:
 
 - `session-dialogs.tsx` contains prompt/add/delete session dialogs.
-- `shortcuts-dialog.tsx` contains shortcut metadata and shortcut rendering.
+- `shortcuts.ts` contains shortcut metadata and command action identifiers.
+- `shortcuts-dialog.tsx` contains shortcut/help rendering.
+- `sidebar.tsx` contains sidebar composition and delegates search/header/project tab behavior to sidebar-owned components.
+- `toast.tsx` contains toast rendering and dismiss behavior.
 - `session-table.tsx` contains session list/table rows and sections.
 
 Component files should have cohesive product ownership. When a component begins combining unrelated features or app-wide data, split the behavior by the owner that changes with it.
+
+Do not pass Zustand store values through component props. Components that need store state or actions should call the relevant store hook themselves. Passing layout metrics such as `width`, `height`, or `tableWidth` is fine because those belong to the shell layout, not app state.
+
+Keep state as local as its behavior allows. For example, project session query state lives in `ProjectSessionList`, sidebar search wiring lives in the sidebar search component, and toast rendering reads toast state in `Toast`.
 
 ## UI Primitives
 
@@ -54,6 +66,27 @@ Component files should have cohesive product ownership. When a component begins 
 
 Feature data like session labels, shortcuts, and command definitions belongs to the feature or command surface that owns the user-facing behavior.
 
+## Stores
+
+`src/store/global.ts` owns app-wide state:
+
+- current page
+- top menu and shortcuts dialog state
+- settings page state
+- persisted orch config
+- toasts
+
+`src/store/dashboard.ts` owns dashboard-only state:
+
+- selected project tab
+- dashboard search and selection
+- session workflow dialogs
+- collapsed lanes and visual selection
+- project row caches
+- selected project session query state
+
+Zustand actions should take explicit values instead of generic updater callbacks. Components that need many fields should read the whole store once and use namespaced access. If setting one store value requires updating related values in the same store, put that side effect in the store action rather than mirroring it from a component effect.
+
 ## Keymaps
 
 Keymap code has two layers:
@@ -61,7 +94,11 @@ Keymap code has two layers:
 - generic dispatch engine in `src/keymap/*.ts`
 - app-specific bindings in `src/keymap/dashboard.ts`
 
-Generic keymap files stay reusable by modeling parsing and dispatch. Dashboard actions live in the app-specific keymap layer that has access to dashboard state.
+Generic keymap files stay reusable by modeling parsing and dispatch. App-specific keymaps are split into global, dashboard page, and settings page scopes, then composed by the page wiring.
+
+`src/hooks/use-dashboard-controller.tsx` owns dashboard data, dashboard actions, and dashboard keymap context wiring used by dashboard-connected components. Page files should not build keymap contexts directly.
+
+`src/hooks/use-settings-controller.tsx` owns settings/config persistence actions such as server switching and adding servers. Settings behavior must not depend on dashboard page/controller modules.
 
 ## Data Layer
 
@@ -70,6 +107,8 @@ Generic keymap files stay reusable by modeling parsing and dispatch. Dashboard a
 `src/opencode/client.ts` owns low-level API calls.
 
 `src/opencode/snapshot.ts` owns assembling the dashboard snapshot.
+
+Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from `client.worktree.list()`, and selected-project sessions come from `client.session.list()`. Project snapshots are filtered to projects with sessions and sorted by latest session activity before reaching UI code.
 
 UI components should consume prepared `SessionRow` data rather than calling the opencode SDK directly.
 
