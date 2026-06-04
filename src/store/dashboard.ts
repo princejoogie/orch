@@ -44,10 +44,11 @@ export type DashboardStore = {
   closeAddSessionDialog: () => void
   setAddSessionValue: (value: string) => void
   setAddSessionWorktreeIndex: (worktreeIndex: number) => void
+  setAddSessionModelProviderIndex: (modelProviderIndex: number) => void
+  setAddSessionModelIndex: (modelIndex: number) => void
   addAddSessionWorktree: (worktree: WorktreeOption) => void
   removeAddSessionWorktree: (directory: string) => void
   setAddSessionFocus: (focus: AddSessionDialogState["focus"]) => void
-  toggleAddSessionFocus: () => void
   setAddSessionSending: () => void
   setAddSessionError: (error: string) => void
   bumpAddSessionClearVersion: () => void
@@ -127,6 +128,16 @@ function createDashboardStore() {
       set((state) => ({
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, worktreeIndex } : undefined,
       })),
+    setAddSessionModelProviderIndex: (modelProviderIndex) =>
+      set((state) => ({
+        addSessionDialog: state.addSessionDialog
+          ? { ...state.addSessionDialog, modelProviderIndex, modelIndex: 0 }
+          : undefined,
+      })),
+    setAddSessionModelIndex: (modelIndex) =>
+      set((state) => ({
+        addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, modelIndex } : undefined,
+      })),
     addAddSessionWorktree: (worktree) =>
       set((state) => {
         if (!state.addSessionDialog) return { addSessionDialog: undefined }
@@ -160,12 +171,6 @@ function createDashboardStore() {
     setAddSessionFocus: (focus) =>
       set((state) => ({
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, focus } : undefined,
-      })),
-    toggleAddSessionFocus: () =>
-      set((state) => ({
-        addSessionDialog: state.addSessionDialog
-          ? { ...state.addSessionDialog, focus: state.addSessionDialog.focus === "input" ? "worktree" : "input" }
-          : undefined,
       })),
     setAddSessionSending: () =>
       set((state) => ({
@@ -322,6 +327,9 @@ function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogStat
     projectDirectory: state.projectDirectory,
     worktrees: state.worktrees,
     worktreeIndex: state.worktreeIndex,
+    modelProviders: state.modelProviders,
+    modelProviderIndex: state.modelProviderIndex,
+    modelIndex: state.modelIndex,
     focus: state.focus,
     value: state.value,
     sending: state.sending,

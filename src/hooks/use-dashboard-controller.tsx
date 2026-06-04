@@ -39,6 +39,7 @@ import {
   createWorktree,
   deleteSession,
   getProjects,
+  loadModelProviders,
   removeWorktree,
   sendPrompt,
   type ProjectSnapshot,
@@ -113,6 +114,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     queryKey: ["opencode-projects", globalStore.config.activeServerUrl],
     queryFn: ({ signal }) => getProjects({ serverUrl: globalStore.config.activeServerUrl, signal }),
   })
+  const modelProvidersQuery = useQuery({
+    queryKey: ["opencode-model-providers", globalStore.config.activeServerUrl],
+    queryFn: ({ signal }) => loadModelProviders({ serverUrl: globalStore.config.activeServerUrl, signal }),
+  })
   const { refetch: refetchProjects } = projectsQuery
 
   const projectSnapshot = projectsQuery.data
@@ -166,7 +171,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     {
       label: "New Session",
       shortcut: "a",
-      disabled: !activeTab || worktreeOptions(activeTab).length === 0,
+      disabled: !activeTab || worktreeOptions(activeTab).length === 0 || (modelProvidersQuery.data ?? []).length === 0,
       run: openAddSessionDialog,
     },
     { label: "Refresh", shortcut: "r", run: () => void refreshDashboard() },
@@ -263,9 +268,17 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         addSessionDialog: dashboardStore.addSessionDialog
           ? {
               worktreeCount: dashboardStore.addSessionDialog.worktrees.length + 1,
+              providerCount: dashboardStore.addSessionDialog.modelProviders.length,
+              modelCount:
+                dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
+                  ?.models.length ?? 0,
               focus: dashboardStore.addSessionDialog.focus,
               close: dashboardStore.closeAddSessionDialog,
-              toggleFocus: dashboardStore.toggleAddSessionFocus,
+              moveFocus: (delta) => {
+                const dialog = dashboardStore.addSessionDialog
+                if (!dialog) return
+                dashboardStore.setAddSessionFocus(nextAddSessionFocus(dialog.focus, delta))
+              },
               moveWorktree: (delta) => {
                 const dialog = dashboardStore.addSessionDialog
                 if (!dialog || dialog.worktrees.length === 0) return
@@ -277,6 +290,25 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                 const dialog = dashboardStore.addSessionDialog
                 if (!dialog) return
                 dashboardStore.setAddSessionFocus("input")
+              },
+              moveModelSelector: (delta) => {
+                const dialog = dashboardStore.addSessionDialog
+                if (!dialog) return
+                if (dialog.focus === "model-provider") {
+                  dashboardStore.setAddSessionModelProviderIndex(
+                    nextIndex(dialog.modelProviderIndex, delta, dialog.modelProviders.length),
+                  )
+                  return
+                }
+
+                const modelCount = dialog.modelProviders[dialog.modelProviderIndex]?.models.length ?? 0
+                if (modelCount > 0)
+                  dashboardStore.setAddSessionModelIndex(nextIndex(dialog.modelIndex, delta, modelCount))
+              },
+              commitModelSelector: () => {
+                const dialog = dashboardStore.addSessionDialog
+                if (!dialog) return
+                dashboardStore.setAddSessionFocus(dialog.focus === "model-provider" ? "model" : "input")
               },
               canRemoveWorktree: canRemoveSelectedAddSessionWorktree(),
               removeWorktree: () => void removeSelectedAddSessionWorktree(),
@@ -449,12 +481,16 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   function openAddSessionDialog() {
     if (!activeTab) return
     const worktrees = worktreeOptions(activeTab)
-    if (worktrees.length === 0) return
+    const modelProviders = modelProvidersQuery.data ?? []
+    if (worktrees.length === 0 || modelProviders.length === 0) return
     dashboardStore.openAddSessionDialog({
       projectTitle: activeTab.title,
       projectDirectory: activeTab.directory,
       worktrees,
       worktreeIndex: 0,
+      modelProviders,
+      modelProviderIndex: 0,
+      modelIndex: 0,
       focus: "input",
       value: "",
       sending: false,
@@ -555,7 +591,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         openPromptDialog(currentRow)
         return true
       case "create-session":
-        if (!activeTab || worktreeOptions(activeTab).length === 0) return false
+        if (!activeTab || worktreeOptions(activeTab).length === 0 || (modelProvidersQuery.data ?? []).length === 0) {
+          return false
+        }
         openAddSessionDialog()
         return true
       case "delete-selected-session":
@@ -675,6 +713,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     if (!trimmed || !dashboardStore.addSessionDialog || dashboardStore.addSessionDialog.sending) return
 
     let worktree = dashboardStore.addSessionDialog.worktrees[dashboardStore.addSessionDialog.worktreeIndex]
+    const modelProvider =
+      dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
+    const model = modelProvider?.models[dashboardStore.addSessionDialog.modelIndex]
+
+    if (!model) {
+      dashboardStore.setAddSessionError("Select a model.")
+      return
+    }
 
     dashboardStore.setAddSessionSending()
     try {
@@ -692,6 +738,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       await createSessionWithPrompt({
         directory: worktree.directory,
         workspaceID: worktree.workspaceID,
+        model: { providerID: model.providerID, modelID: model.modelID },
         text: trimmed,
         serverUrl: globalStore.config.activeServerUrl,
       })
@@ -847,6 +894,12 @@ function fuzzySessionMatch(row: SessionRow, query: string): boolean {
 
 function halfPage(height: number): number {
   return Math.max(1, Math.floor(height / 2))
+}
+
+function nextAddSessionFocus(focus: "input" | "worktree" | "model-provider" | "model", delta: -1 | 1) {
+  const order = ["input", "worktree", "model-provider"] as const
+  const currentIndex = focus === "model" ? order.indexOf("model-provider") : order.indexOf(focus)
+  return order[(currentIndex + delta + order.length) % order.length] ?? "input"
 }
 
 function selectedSessionLine(

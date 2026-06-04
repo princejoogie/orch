@@ -49,12 +49,28 @@ export type WorktreeOption = {
   name: string
 }
 
+export type ModelOption = {
+  providerID: string
+  providerName: string
+  modelID: string
+  name: string
+}
+
+export type ModelProviderOption = {
+  id: string
+  name: string
+  models: ModelOption[]
+}
+
 export type AddSessionDialogState = {
   projectTitle: string
   projectDirectory: string
   worktrees: WorktreeOption[]
   worktreeIndex: number
-  focus: "input" | "worktree"
+  modelProviders: ModelProviderOption[]
+  modelProviderIndex: number
+  modelIndex: number
+  focus: "input" | "worktree" | "model-provider" | "model"
   value: string
   sending: boolean
   error?: string | undefined

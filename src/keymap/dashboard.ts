@@ -19,11 +19,15 @@ export interface MenuCtx {
 
 export interface AddSessionDialogCtx {
   readonly worktreeCount: number
-  readonly focus: "input" | "worktree"
+  readonly providerCount: number
+  readonly modelCount: number
+  readonly focus: "input" | "worktree" | "model-provider" | "model"
   readonly close: () => void
-  readonly toggleFocus: () => void
+  readonly moveFocus: (delta: -1 | 1) => void
   readonly moveWorktree: (delta: -1 | 1) => void
   readonly commitWorktree: () => void
+  readonly moveModelSelector: (delta: -1 | 1) => void
+  readonly commitModelSelector: () => void
   readonly canRemoveWorktree: boolean
   readonly removeWorktree: () => void
 }
@@ -166,8 +170,8 @@ const menuKeymap = Menu(
 
 const addSessionDialogKeymap = AddSessionDialog(
   { id: "session-new.cancel", title: "Cancel", keys: ["escape"], run: (ctx) => ctx.close() },
-  { id: "session-new.focus.next", title: "Next field", keys: ["tab"], run: (ctx) => ctx.toggleFocus() },
-  { id: "session-new.focus.previous", title: "Previous field", keys: ["shift+tab"], run: (ctx) => ctx.toggleFocus() },
+  { id: "session-new.focus.next", title: "Next field", keys: ["tab"], run: (ctx) => ctx.moveFocus(1) },
+  { id: "session-new.focus.previous", title: "Previous field", keys: ["shift+tab"], run: (ctx) => ctx.moveFocus(-1) },
   {
     id: "session-new.worktree.next",
     title: "Next worktree",
@@ -198,6 +202,29 @@ const addSessionDialogKeymap = AddSessionDialog(
     when: (ctx) => ctx.focus === "worktree",
     enabled: (ctx) => ctx.canRemoveWorktree || "Cannot remove this worktree.",
     run: (ctx) => ctx.removeWorktree(),
+  },
+  {
+    id: "session-new.model.next",
+    title: "Next model selector option",
+    keys: ["j", "down", "ctrl+n"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
+    enabled: (ctx) => (ctx.focus === "model-provider" ? ctx.providerCount : ctx.modelCount) > 1 || "Only one option.",
+    run: (ctx) => ctx.moveModelSelector(1),
+  },
+  {
+    id: "session-new.model.previous",
+    title: "Previous model selector option",
+    keys: ["k", "up", "ctrl+p"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
+    enabled: (ctx) => (ctx.focus === "model-provider" ? ctx.providerCount : ctx.modelCount) > 1 || "Only one option.",
+    run: (ctx) => ctx.moveModelSelector(-1),
+  },
+  {
+    id: "session-new.model.commit",
+    title: "Use selected model option",
+    keys: ["return"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
+    run: (ctx) => ctx.commitModelSelector(),
   },
 )
 
