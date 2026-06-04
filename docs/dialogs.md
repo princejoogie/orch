@@ -94,11 +94,19 @@ Prompt textareas use explicit key bindings:
 
 Prompt submission is an app-level decision, so textarea submit semantics are explicit instead of inherited from the renderer default.
 
-The prompt-session dialog shows previous session messages in a fixed-height scrollable section above the textarea. Messages are grouped by contiguous role with `● User:` or `● Assistant:` headers, and individual messages are separated by a blank line. The textarea keeps focus for typing; the message section starts at the newest loaded messages, supports mouse-wheel scrolling, and lazy-loads older messages when the user scrolls upward near the top.
+The prompt-session dialog shows previous session messages in a tall scrollable section above the textarea. Messages are grouped by contiguous role with `● User:` or `● Assistant:` headers, use distinct bullet colors per role, give user message blocks a subtle background, and separate individual messages with a blank line. The textarea keeps focus for typing; opening the dialog loads the selected session's full message history, the message section starts at the newest messages, and mouse-wheel scrolling stays scrollbox-owned. A user message with no assistant response linked yet renders as `User (queued)`.
+
+Prompt-session model/provider options, default model lookup, and full message history are queried by the mounted prompt dialog component, not by the dashboard controller.
+
+Clicking the prompt textarea focuses text input. Clicking model/provider/variant selector segments focuses that selector; clicking back into the textarea dismisses the selector menu.
 
 ## New Session Dialog
 
 The new-session dialog starts with focus in the prompt textarea.
+
+New-session model/provider options and default model lookup are queried by the mounted new-session dialog component, not by the dashboard controller.
+
+Opening a new session from a selected row seeds the row's worktree and model/variant when available. Clicking the prompt textarea focuses text input. Clicking worktree/model/provider/variant selector segments focuses that selector; clicking back into the textarea dismisses the selector menu.
 
 - `tab` and `shift-tab` switch focus between the prompt textarea and worktree selector.
 - The worktree selector trigger is plain `Worktree: <name>` text and reuses the shared `MenuDropdown` component while focused.

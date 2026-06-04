@@ -123,7 +123,8 @@ async function loadGitWorktrees(directory: string): Promise<GitWorktree[]> {
     if (exitCode !== 0) return []
 
     return parseGitWorktrees(output)
-  } catch {
+  } catch (worktreeError) {
+    console.error("Failed to load git worktrees", worktreeError)
     return []
   }
 }
@@ -180,6 +181,7 @@ async function loadRecentProjectSessionUpdated(
       )
   } catch (sessionError) {
     if (isAbortError(sessionError)) throw sessionError
+    console.error("Failed to load recent project sessions", sessionError)
     return undefined
   }
 }
@@ -236,6 +238,7 @@ async function loadStatuses(
         return [key, result.data] as const
       } catch (statusError) {
         if (isAbortError(statusError)) throw statusError
+        console.error("Failed to load session statuses", statusError)
         return [key, {}] as const
       }
     }),
@@ -268,6 +271,7 @@ async function loadSessionDetails(
           ...(messages.assistantInfo !== undefined ? { historyAssistantMessage: messages.assistantInfo } : {}),
         }).catch((contextError): { tokens?: number; percent?: number } => {
           if (isAbortError(contextError)) throw contextError
+          console.error("Failed to load session context usage", contextError)
           return {}
         })
         return [
@@ -283,6 +287,7 @@ async function loadSessionDetails(
         ] as const
       } catch (detailsError) {
         if (isAbortError(detailsError)) throw detailsError
+        console.error("Failed to load session details", detailsError)
         return [session.id, { latestMessage: "", latestUserMessage: "", messages: [], hasMoreMessages: false }] as const
       }
     }),
@@ -330,6 +335,15 @@ function toRow(
     projectTitle: project?.title ?? globalProject?.name ?? formatDirectory(projectWorktree ?? session.directory),
     worktreeName: formatDirectory(session.directory),
     ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
+    ...(session.model !== undefined
+      ? {
+          model: {
+            providerID: session.model.providerID,
+            modelID: session.model.id,
+            ...(session.model.variant !== undefined ? { variant: session.model.variant } : {}),
+          },
+        }
+      : {}),
     updated: session.time.updated,
     status: inferStatus(session, status),
   }

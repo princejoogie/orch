@@ -36,10 +36,13 @@ export type CollapsedSections = Partial<Record<LaneStatus, boolean>>
 
 export type PromptDialogState = {
   row: SessionRow
+  modelProviders: ModelProviderOption[]
+  modelProviderIndex: number
+  modelIndex: number
+  variantIndex: number
+  focus: "input" | "model-provider" | "model" | "variant"
   value: string
   sending: boolean
-  loadingPreview?: boolean | undefined
-  loadingMorePreview?: boolean | undefined
   error?: string | undefined
 }
 
@@ -54,6 +57,7 @@ export type ModelOption = {
   providerName: string
   modelID: string
   name: string
+  variants: string[]
 }
 
 export type ModelProviderOption = {
@@ -65,12 +69,14 @@ export type ModelProviderOption = {
 export type AddSessionDialogState = {
   projectTitle: string
   projectDirectory: string
+  initialModel?: SessionRow["model"] | undefined
   worktrees: WorktreeOption[]
   worktreeIndex: number
   modelProviders: ModelProviderOption[]
   modelProviderIndex: number
   modelIndex: number
-  focus: "input" | "worktree" | "model-provider" | "model"
+  variantIndex: number
+  focus: "input" | "worktree" | "model-provider" | "model" | "variant"
   value: string
   sending: boolean
   error?: string | undefined

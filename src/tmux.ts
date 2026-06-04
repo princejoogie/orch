@@ -121,7 +121,8 @@ function shortBranch(branch: string): string {
 function realPath(path: string): string {
   try {
     return realpathSync(path)
-  } catch {
+  } catch (realPathError) {
+    console.error("Failed to resolve real path", realPathError)
     return path
   }
 }

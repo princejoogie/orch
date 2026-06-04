@@ -40,11 +40,10 @@ import {
   deleteSession,
   getProjects,
   interruptSession,
-  loadLatestMessages,
-  loadModelProviders,
   removeWorktree,
   sendPrompt,
   selectTuiSession,
+  type ModelProviderOption,
   type ProjectSnapshot,
   type SessionRow,
 } from "../opencode.ts"
@@ -73,7 +72,6 @@ export type DashboardController = {
   openSettingsPage: () => void
   submitAddSession: (value: string) => Promise<void>
   submitPrompt: (value: string) => Promise<void>
-  loadMorePromptMessages: () => Promise<void>
   confirmDeleteWorktree: () => void
   confirmDeleteSession: () => void
   confirmInterruptSession: () => void
@@ -119,10 +117,6 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   const projectsQuery = useQuery({
     queryKey: ["opencode-projects", globalStore.config.activeServerUrl],
     queryFn: ({ signal }) => getProjects({ serverUrl: globalStore.config.activeServerUrl, signal }),
-  })
-  const modelProvidersQuery = useQuery({
-    queryKey: ["opencode-model-providers", globalStore.config.activeServerUrl],
-    queryFn: ({ signal }) => loadModelProviders({ serverUrl: globalStore.config.activeServerUrl, signal }),
   })
   const { refetch: refetchProjects } = projectsQuery
 
@@ -180,7 +174,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     {
       label: "New Session",
       shortcut: "a",
-      disabled: !activeTab || worktreeOptions(activeTab).length === 0 || (modelProvidersQuery.data ?? []).length === 0,
+      disabled: !activeTab || worktreeOptions(activeTab).length === 0,
       run: openAddSessionDialog,
     },
     { label: "Refresh", shortcut: "r", run: () => void refreshDashboard() },
@@ -295,6 +289,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                 modelCount:
                   dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
                     ?.models.length ?? 0,
+                variantCount: variantOptions(
+                  dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
+                    ?.models[dashboardStore.addSessionDialog.modelIndex],
+                ).length,
                 focus: dashboardStore.addSessionDialog.focus,
                 close: dashboardStore.closeAddSessionDialog,
                 moveFocus: (delta) => {
@@ -325,13 +323,24 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                   }
 
                   const modelCount = dialog.modelProviders[dialog.modelProviderIndex]?.models.length ?? 0
-                  if (modelCount > 0)
+                  if (dialog.focus === "model" && modelCount > 0) {
                     dashboardStore.setAddSessionModelIndex(nextIndex(dialog.modelIndex, delta, modelCount))
+                    return
+                  }
+
+                  const variantCount = variantOptions(
+                    dialog.modelProviders[dialog.modelProviderIndex]?.models[dialog.modelIndex],
+                  ).length
+                  if (dialog.focus === "variant" && variantCount > 0) {
+                    dashboardStore.setAddSessionVariantIndex(nextIndex(dialog.variantIndex, delta, variantCount))
+                  }
                 },
                 commitModelSelector: () => {
                   const dialog = dashboardStore.addSessionDialog
                   if (!dialog) return
-                  dashboardStore.setAddSessionFocus(dialog.focus === "model-provider" ? "model" : "input")
+                  dashboardStore.setAddSessionFocus(
+                    dialog.focus === "model-provider" ? "model" : dialog.focus === "model" ? "variant" : "input",
+                  )
                 },
                 canRemoveWorktree: canRemoveSelectedAddSessionWorktree(),
                 removeWorktree: openDeleteSelectedAddSessionWorktreeDialog,
@@ -340,7 +349,56 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         deleteWorktreeDialog: dashboardStore.deleteWorktreeDialog
           ? { close: dashboardStore.closeDeleteWorktreeDialog, confirm: confirmDeleteWorktree }
           : null,
-        promptDialog: dashboardStore.promptDialog ? { close: dashboardStore.closePromptDialog } : null,
+        promptDialog: dashboardStore.promptDialog
+          ? {
+              providerCount: dashboardStore.promptDialog.modelProviders.length,
+              modelCount:
+                dashboardStore.promptDialog.modelProviders[dashboardStore.promptDialog.modelProviderIndex]?.models
+                  .length ?? 0,
+              variantCount: variantOptions(
+                dashboardStore.promptDialog.modelProviders[dashboardStore.promptDialog.modelProviderIndex]?.models[
+                  dashboardStore.promptDialog.modelIndex
+                ],
+              ).length,
+              focus: dashboardStore.promptDialog.focus,
+              close: dashboardStore.closePromptDialog,
+              moveFocus: (delta) => {
+                const dialog = dashboardStore.promptDialog
+                if (!dialog) return
+                dashboardStore.setPromptFocus(nextPromptFocus(dialog.focus, delta))
+              },
+              moveModelSelector: (delta) => {
+                const dialog = dashboardStore.promptDialog
+                if (!dialog) return
+                if (dialog.focus === "model-provider") {
+                  dashboardStore.setPromptModelProviderIndex(
+                    nextIndex(dialog.modelProviderIndex, delta, dialog.modelProviders.length),
+                  )
+                  return
+                }
+
+                const modelCount = dialog.modelProviders[dialog.modelProviderIndex]?.models.length ?? 0
+                if (dialog.focus === "model" && modelCount > 0) {
+                  dashboardStore.setPromptModelIndex(nextIndex(dialog.modelIndex, delta, modelCount))
+                  return
+                }
+
+                const variantCount = variantOptions(
+                  dialog.modelProviders[dialog.modelProviderIndex]?.models[dialog.modelIndex],
+                ).length
+                if (dialog.focus === "variant" && variantCount > 0) {
+                  dashboardStore.setPromptVariantIndex(nextIndex(dialog.variantIndex, delta, variantCount))
+                }
+              },
+              commitModelSelector: () => {
+                const dialog = dashboardStore.promptDialog
+                if (!dialog) return
+                dashboardStore.setPromptFocus(
+                  dialog.focus === "model-provider" ? "model" : dialog.focus === "model" ? "variant" : "input",
+                )
+              },
+            }
+          : null,
         deleteSessionDialog: dashboardStore.deleteDialog
           ? { close: dashboardStore.closeDeleteDialog, confirm: () => void confirmDeleteSession() }
           : null,
@@ -450,12 +508,13 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     if (projectErrorToastRef.current === projectErrorToastKey) return
     projectErrorToastRef.current = projectErrorToastKey
+    console.error("Failed to load projects", projectsQuery.error)
     globalStoreRef.current.addToast({
       status: "error",
       title: "Failed to load projects",
       detail: projectQueryError,
     })
-  }, [projectErrorToastKey, projectQueryError])
+  }, [projectErrorToastKey, projectQueryError, projectsQuery.error])
 
   useEffect(() => {
     let disposed = false
@@ -470,6 +529,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       })
       .catch((configError) => {
         if (disposed) return
+        console.error("Failed to load config", configError)
         globalStoreRef.current.addToast({
           status: "error",
           title: "Failed to load config",
@@ -522,16 +582,23 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   function openAddSessionDialog() {
     if (!activeTab) return
     const worktrees = worktreeOptions(activeTab)
-    const modelProviders = modelProvidersQuery.data ?? []
-    if (worktrees.length === 0 || modelProviders.length === 0) return
+    if (worktrees.length === 0) return
+    const initialWorktreeIndex = currentRow
+      ? Math.max(
+          0,
+          worktrees.findIndex((worktree) => worktree.directory === currentRow.directory),
+        )
+      : 0
     dashboardStore.openAddSessionDialog({
       projectTitle: activeTab.title,
       projectDirectory: activeTab.directory,
+      ...(currentRow?.model !== undefined ? { initialModel: currentRow.model } : {}),
       worktrees,
-      worktreeIndex: 0,
-      modelProviders,
+      worktreeIndex: initialWorktreeIndex,
+      modelProviders: [],
       modelProviderIndex: 0,
       modelIndex: 0,
+      variantIndex: 0,
       focus: "input",
       value: "",
       sending: false,
@@ -632,7 +699,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         openPromptDialog(currentRow)
         return true
       case "create-session":
-        if (!activeTab || worktreeOptions(activeTab).length === 0 || (modelProvidersQuery.data ?? []).length === 0) {
+        if (!activeTab || worktreeOptions(activeTab).length === 0) {
           return false
         }
         openAddSessionDialog()
@@ -736,9 +803,13 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   function openPromptDialog(row: SessionRow) {
     dashboardStore.openPromptDialog({
       row,
+      modelProviders: [],
+      modelProviderIndex: 0,
+      modelIndex: 0,
+      variantIndex: 0,
+      focus: "input",
       value: "",
       sending: false,
-      loadingPreview: false,
     })
   }
 
@@ -757,10 +828,12 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           title: "Failed to switch opencode session",
           detail: errorMessage(tuiError),
         })
+        console.error("Failed to switch opencode session", tuiError)
       }
 
       await openTmuxSessionForRow(row)
     } catch (tmuxError) {
+      console.error("Failed to open tmux", tmuxError)
       globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
     }
   }
@@ -773,6 +846,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     const modelProvider =
       dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
     const model = modelProvider?.models[dashboardStore.addSessionDialog.modelIndex]
+    const variant = variantOptions(model)[dashboardStore.addSessionDialog.variantIndex]
 
     if (!model) {
       dashboardStore.setAddSessionError("Select a model.")
@@ -795,13 +869,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       await createSessionWithPrompt({
         directory: worktree.directory,
         workspaceID: worktree.workspaceID,
-        model: { providerID: model.providerID, modelID: model.modelID },
+        model: { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) },
         text: trimmed,
         serverUrl: globalStore.config.activeServerUrl,
       })
       dashboardStore.closeAddSessionDialog()
       await refreshDashboard()
     } catch (createError) {
+      console.error("Failed to create session", createError)
       const detail = errorMessage(createError)
       dashboardStore.setAddSessionError(detail)
       globalStore.addToast({ status: "error", title: "Failed to create session", detail })
@@ -847,6 +922,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         globalStore.updateToast(toastId, { status: "success", title: "Deleted worktree", detail: dialog.worktree.name })
         await refreshDashboard()
       } catch (removeError) {
+        console.error("Failed to delete worktree", removeError)
         const detail = errorMessage(removeError)
         dashboardStore.setAddSessionError(detail)
         globalStore.updateToast(toastId, { status: "error", title: "Failed to delete worktree", detail })
@@ -859,48 +935,32 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     if (!trimmed || !dashboardStore.promptDialog || dashboardStore.promptDialog.sending) return
 
     const row = dashboardStore.promptDialog.row
+    const modelProvider = dashboardStore.promptDialog.modelProviders[dashboardStore.promptDialog.modelProviderIndex]
+    const model = modelProvider?.models[dashboardStore.promptDialog.modelIndex]
+    const variant = variantOptions(model)[dashboardStore.promptDialog.variantIndex]
+
+    if (!model) {
+      dashboardStore.setPromptError("Select a model.")
+      return
+    }
+
     dashboardStore.setPromptSending()
     try {
       await sendPrompt({
         sessionID: row.id,
         directory: row.directory,
         workspaceID: row.workspaceID,
+        model: { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) },
         text: trimmed,
         serverUrl: globalStore.config.activeServerUrl,
       })
-      dashboardStore.closePromptDialog()
+      dashboardStore.setPromptSent()
       await refreshDashboard()
     } catch (promptError) {
+      console.error("Failed to send prompt", promptError)
       const detail = errorMessage(promptError)
       dashboardStore.setPromptError(detail)
       globalStore.addToast({ status: "error", title: "Failed to send prompt", detail })
-    }
-  }
-
-  async function loadMorePromptMessages() {
-    const dialog = dashboardStoreRef.current.promptDialog
-    if (!dialog || dialog.loadingMorePreview || !dialog.row.hasMoreMessages) return
-
-    const oldestMessage = dialog.row.messages[0]
-    if (!oldestMessage) return
-
-    dashboardStoreRef.current.setPromptLoadingMore()
-    try {
-      const messages = await loadLatestMessages({
-        sessionID: dialog.row.id,
-        directory: dialog.row.directory,
-        workspaceID: dialog.row.workspaceID,
-        before: oldestMessage.id,
-        serverUrl: globalStoreRef.current.config.activeServerUrl,
-      })
-      dashboardStoreRef.current.prependPromptMessages(messages.messages, messages.hasMore)
-    } catch (loadError) {
-      dashboardStoreRef.current.prependPromptMessages([], dialog.row.hasMoreMessages)
-      globalStoreRef.current.addToast({
-        status: "error",
-        title: "Failed to load messages",
-        detail: errorMessage(loadError),
-      })
     }
   }
 
@@ -934,6 +994,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       if (failed.length === 0) {
         globalStore.updateToast(toastId, { status: "success", title: `Deleted ${formatSessionCount(count)}` })
       } else {
+        for (const result of failed) console.error("Failed to delete session", result.reason)
         globalStore.updateToast(toastId, {
           status: "error",
           title: `Deleted ${count - failed.length} of ${count} sessions`,
@@ -975,6 +1036,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       if (failed.length === 0) {
         globalStore.updateToast(toastId, { status: "success", title: `Interrupted ${formatSessionCount(count)}` })
       } else {
+        for (const result of failed) console.error("Failed to interrupt session", result.reason)
         globalStore.updateToast(toastId, {
           status: "error",
           title: `Interrupted ${count - failed.length} of ${count} sessions`,
@@ -1007,7 +1069,6 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     openSettingsPage,
     submitAddSession,
     submitPrompt,
-    loadMorePromptMessages,
     confirmDeleteWorktree,
     confirmDeleteSession,
     confirmInterruptSession,
@@ -1041,10 +1102,20 @@ function halfPage(height: number): number {
   return Math.max(1, Math.floor(height / 2))
 }
 
-function nextAddSessionFocus(focus: "input" | "worktree" | "model-provider" | "model", delta: -1 | 1) {
-  const order = ["input", "worktree", "model-provider"] as const
+function nextAddSessionFocus(focus: "input" | "worktree" | "model-provider" | "model" | "variant", delta: -1 | 1) {
+  const order = ["input", "worktree", "model-provider", "variant"] as const
   const currentIndex = focus === "model" ? order.indexOf("model-provider") : order.indexOf(focus)
   return order[(currentIndex + delta + order.length) % order.length] ?? "input"
+}
+
+function nextPromptFocus(focus: "input" | "model-provider" | "model" | "variant", delta: -1 | 1) {
+  const order = ["input", "model-provider", "variant"] as const
+  const currentIndex = focus === "model" ? order.indexOf("model-provider") : order.indexOf(focus)
+  return order[(currentIndex + delta + order.length) % order.length] ?? "input"
+}
+
+function variantOptions(model: ModelProviderOption["models"][number] | undefined): Array<string | undefined> {
+  return [undefined, ...(model?.variants ?? [])]
 }
 
 function selectedSessionLine(

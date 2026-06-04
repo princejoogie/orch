@@ -21,7 +21,8 @@ export interface AddSessionDialogCtx {
   readonly worktreeCount: number
   readonly providerCount: number
   readonly modelCount: number
-  readonly focus: "input" | "worktree" | "model-provider" | "model"
+  readonly variantCount: number
+  readonly focus: "input" | "worktree" | "model-provider" | "model" | "variant"
   readonly close: () => void
   readonly moveFocus: (delta: -1 | 1) => void
   readonly moveWorktree: (delta: -1 | 1) => void
@@ -38,7 +39,14 @@ export interface DeleteWorktreeDialogCtx {
 }
 
 export interface PromptDialogCtx {
+  readonly providerCount: number
+  readonly modelCount: number
+  readonly variantCount: number
+  readonly focus: "input" | "model-provider" | "model" | "variant"
   readonly close: () => void
+  readonly moveFocus: (delta: -1 | 1) => void
+  readonly moveModelSelector: (delta: -1 | 1) => void
+  readonly commitModelSelector: () => void
 }
 
 export interface DeleteSessionDialogCtx {
@@ -224,33 +232,76 @@ const addSessionDialogKeymap = AddSessionDialog(
     id: "session-new.model.next",
     title: "Next model selector option",
     keys: ["j", "down", "ctrl+n"],
-    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
-    enabled: (ctx) => (ctx.focus === "model-provider" ? ctx.providerCount : ctx.modelCount) > 1 || "Only one option.",
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
+    enabled: (ctx) => {
+      const count =
+        ctx.focus === "model-provider" ? ctx.providerCount : ctx.focus === "model" ? ctx.modelCount : ctx.variantCount
+      return count > 1 || "Only one option."
+    },
     run: (ctx) => ctx.moveModelSelector(1),
   },
   {
     id: "session-new.model.previous",
     title: "Previous model selector option",
     keys: ["k", "up", "ctrl+p"],
-    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
-    enabled: (ctx) => (ctx.focus === "model-provider" ? ctx.providerCount : ctx.modelCount) > 1 || "Only one option.",
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
+    enabled: (ctx) => {
+      const count =
+        ctx.focus === "model-provider" ? ctx.providerCount : ctx.focus === "model" ? ctx.modelCount : ctx.variantCount
+      return count > 1 || "Only one option."
+    },
     run: (ctx) => ctx.moveModelSelector(-1),
   },
   {
     id: "session-new.model.commit",
     title: "Use selected model option",
     keys: ["return"],
-    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model",
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
     run: (ctx) => ctx.commitModelSelector(),
   },
 )
 
-const promptDialogKeymap = PromptDialog({
-  id: "prompt.cancel",
-  title: "Cancel prompt",
-  keys: ["escape"],
-  run: (ctx) => ctx.close(),
-})
+const promptDialogKeymap = PromptDialog(
+  {
+    id: "prompt.cancel",
+    title: "Cancel prompt",
+    keys: ["escape"],
+    run: (ctx) => ctx.close(),
+  },
+  { id: "prompt.focus.next", title: "Next field", keys: ["tab"], run: (ctx) => ctx.moveFocus(1) },
+  { id: "prompt.focus.previous", title: "Previous field", keys: ["shift+tab"], run: (ctx) => ctx.moveFocus(-1) },
+  {
+    id: "prompt.model.next",
+    title: "Next model selector option",
+    keys: ["j", "down", "ctrl+n"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
+    enabled: (ctx) => {
+      const count =
+        ctx.focus === "model-provider" ? ctx.providerCount : ctx.focus === "model" ? ctx.modelCount : ctx.variantCount
+      return count > 1 || "Only one option."
+    },
+    run: (ctx) => ctx.moveModelSelector(1),
+  },
+  {
+    id: "prompt.model.previous",
+    title: "Previous model selector option",
+    keys: ["k", "up", "ctrl+p"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
+    enabled: (ctx) => {
+      const count =
+        ctx.focus === "model-provider" ? ctx.providerCount : ctx.focus === "model" ? ctx.modelCount : ctx.variantCount
+      return count > 1 || "Only one option."
+    },
+    run: (ctx) => ctx.moveModelSelector(-1),
+  },
+  {
+    id: "prompt.model.commit",
+    title: "Use selected model option",
+    keys: ["return"],
+    when: (ctx) => ctx.focus === "model-provider" || ctx.focus === "model" || ctx.focus === "variant",
+    run: (ctx) => ctx.commitModelSelector(),
+  },
+)
 
 const deleteWorktreeDialogKeymap = DeleteWorktreeDialog(
   ...confirmModalBindings<DeleteWorktreeDialogCtx>({

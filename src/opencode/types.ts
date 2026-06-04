@@ -4,6 +4,13 @@ export type SessionHistoryMessage = {
   id: string
   role: "user" | "assistant"
   text: string
+  queued?: boolean | undefined
+}
+
+export type SessionModel = {
+  providerID: string
+  modelID: string
+  variant?: string | undefined
 }
 
 export type SessionRow = {
@@ -20,6 +27,7 @@ export type SessionRow = {
   projectTitle: string
   worktreeName: string
   workspaceID?: string | undefined
+  model?: SessionModel | undefined
   updated: number
   status: SessionStatus
 }

@@ -16,7 +16,8 @@ export async function readJsonFile<T>(filePath: string, fallback: T): Promise<T>
 
   try {
     return (await file.json()) as T
-  } catch {
+  } catch (readError) {
+    console.error(`Failed to read JSON file ${filePath}`, readError)
     return fallback
   }
 }

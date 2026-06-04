@@ -1,5 +1,6 @@
 import {
   createOpencodeClient,
+  type Agent,
   type AssistantMessage,
   type Part,
   type Provider,
@@ -10,6 +11,7 @@ import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerU
 import type { SessionHistoryMessage } from "./types.ts"
 
 export const DEFAULT_LIMIT = 100
+export const LATEST_MESSAGES_LIMIT = 20
 
 export function opencodeServerUrl(): string {
   return defaultOpencodeServerUrl()
@@ -30,7 +32,7 @@ export type LatestMessages = {
 export async function sendPrompt(input: {
   sessionID: string
   text: string
-  model?: { providerID: string; modelID: string } | undefined
+  model?: { providerID: string; modelID: string; variant?: string | undefined } | undefined
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
@@ -39,7 +41,10 @@ export async function sendPrompt(input: {
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
-      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.model !== undefined
+        ? { model: { providerID: input.model.providerID, modelID: input.model.modelID } }
+        : {}),
+      ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
       parts: [{ type: "text", text: input.text }],
     },
     { throwOnError: true },
@@ -49,13 +54,25 @@ export async function sendPrompt(input: {
 export async function createSessionWithPrompt(input: {
   text: string
   directory: string
-  model?: { providerID: string; modelID: string } | undefined
+  model?: { providerID: string; modelID: string; variant?: string | undefined } | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
 }): Promise<string> {
   const client = opencodeClient(input.serverUrl)
   const session = await client.session.create(
-    { directory: input.directory, ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}) },
+    {
+      directory: input.directory,
+      ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
+      ...(input.model !== undefined
+        ? {
+            model: {
+              providerID: input.model.providerID,
+              id: input.model.modelID,
+              ...(input.model.variant !== undefined ? { variant: input.model.variant } : {}),
+            },
+          }
+        : {}),
+    },
     { throwOnError: true },
   )
 
@@ -89,12 +106,39 @@ export type ModelOption = {
   providerName: string
   modelID: string
   name: string
+  variants: string[]
 }
 
 export type ModelProviderOption = {
   id: string
   name: string
   models: ModelOption[]
+}
+
+export type DefaultModelOption = {
+  providerID: string
+  modelID: string
+  variant?: string | undefined
+}
+
+export async function loadDefaultModel(input: {
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
+}): Promise<DefaultModelOption | undefined> {
+  const client = opencodeClient(input.serverUrl)
+  const [config, agents] = await Promise.all([
+    client.config.get(routeOptions(input), {
+      throwOnError: true,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    }),
+    client.app.agents(routeOptions(input), {
+      throwOnError: true,
+      ...(input.signal !== undefined ? { signal: input.signal } : {}),
+    }),
+  ])
+  return defaultAgentModel(config.data.default_agent, agents.data) ?? parseModelConfig(config.data.model)
 }
 
 export async function loadModelProviders(input: {
@@ -119,10 +163,37 @@ export async function loadModelProviders(input: {
           providerName,
           modelID,
           name: model.name ?? modelID,
+          variants: Object.keys(model.variants ?? {}),
         })),
       }
     })
     .filter((provider) => provider.models.length > 0)
+}
+
+function parseModelConfig(value: string | undefined): DefaultModelOption | undefined {
+  if (!value) return undefined
+
+  const separatorIndex = value.indexOf("/")
+  if (separatorIndex <= 0 || separatorIndex === value.length - 1) return undefined
+
+  return {
+    providerID: value.slice(0, separatorIndex),
+    modelID: value.slice(separatorIndex + 1),
+  }
+}
+
+function defaultAgentModel(defaultAgentName: string | undefined, agents: Agent[]): DefaultModelOption | undefined {
+  const configuredAgent = defaultAgentName ? agents.find((agent) => agent.name === defaultAgentName) : undefined
+  const fallbackAgent = agents.find((agent) => agent.name === "build")
+  const agent = configuredAgent ?? fallbackAgent
+  const model = agent?.model
+  if (!model) return undefined
+
+  return {
+    providerID: model.providerID,
+    modelID: model.modelID,
+    ...(agent.variant !== undefined ? { variant: agent.variant } : {}),
+  }
 }
 
 export async function removeWorktree(input: {
@@ -191,22 +262,38 @@ export async function loadLatestMessages(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   limit?: number | undefined
-  before?: string | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
 }): Promise<LatestMessages> {
-  const limit = input.limit ?? 20
+  const limit = input.limit ?? LATEST_MESSAGES_LIMIT
   const result = await opencodeClient(input.serverUrl).session.messages(
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
       limit,
-      ...(input.before !== undefined ? { before: input.before } : {}),
     },
     { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
   )
 
   return extractLatestMessages(result.data, limit)
+}
+
+export async function loadSessionHistory(input: {
+  sessionID: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
+}): Promise<SessionHistoryMessage[]> {
+  const result = await opencodeClient(input.serverUrl).session.messages(
+    {
+      sessionID: input.sessionID,
+      ...routeOptions(input),
+    },
+    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
+  )
+
+  return extractHistoryMessages(result.data)
 }
 
 export async function loadContextUsage(input: {
@@ -254,14 +341,7 @@ function extractLatestMessages(messages: SessionMessagesResponse, limit: number)
   let userMessage = ""
   let assistantMessage = ""
   let assistantInfo: AssistantMessage | undefined
-  const history: SessionHistoryMessage[] = []
-
-  for (const message of messages) {
-    if (message.info.role !== "user" && message.info.role !== "assistant") continue
-
-    const text = textParts(message.parts)
-    if (text) history.push({ id: message.info.id, role: message.info.role, text })
-  }
+  const history = extractHistoryMessages(messages)
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -282,6 +362,30 @@ function extractLatestMessages(messages: SessionMessagesResponse, limit: number)
     hasMore: messages.length >= limit,
     ...(assistantInfo !== undefined ? { assistantInfo } : {}),
   }
+}
+
+function extractHistoryMessages(messages: SessionMessagesResponse): SessionHistoryMessage[] {
+  const answeredUserIds = new Set<string>()
+  for (const message of messages) {
+    if (message.info.role === "assistant" && message.info.parentID) answeredUserIds.add(message.info.parentID)
+  }
+  const history: SessionHistoryMessage[] = []
+
+  for (const message of messages) {
+    if (message.info.role !== "user" && message.info.role !== "assistant") continue
+
+    const text = textParts(message.parts)
+    if (!text) continue
+
+    history.push({
+      id: message.info.id,
+      role: message.info.role,
+      text,
+      ...(message.info.role === "user" && !answeredUserIds.has(message.info.id) ? { queued: true } : {}),
+    })
+  }
+
+  return history
 }
 
 function routeOptions(input: { directory?: string | undefined; workspaceID?: string | undefined }) {

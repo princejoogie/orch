@@ -85,8 +85,9 @@ export function ProjectSessionList({ width }: { width: number }) {
 
     if (sessionErrorToastRef.current === sessionErrorToastKey) return
     sessionErrorToastRef.current = sessionErrorToastKey
+    console.error("Failed to load sessions", sessionsErrorValue)
     addToast({ status: "error", title: "Failed to load sessions", detail: sessionError })
-  }, [addToast, sessionError, sessionErrorToastKey])
+  }, [addToast, sessionError, sessionErrorToastKey, sessionsErrorValue])
 
   return (
     <>

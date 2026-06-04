@@ -66,7 +66,8 @@ export function normalizeServerUrl(value: string): string {
   try {
     const url = new URL(trimmed)
     return url.toString().replace(/\/$/, "")
-  } catch {
+  } catch (urlError) {
+    console.error("Failed to parse server URL", urlError)
     return trimmed.replace(/\/$/, "")
   }
 }
@@ -75,7 +76,8 @@ export function serverNameFromUrl(value: string): string {
   const url = normalizeServerUrl(value)
   try {
     return new URL(url).host || url
-  } catch {
+  } catch (urlError) {
+    console.error("Failed to parse server name URL", urlError)
     return url
   }
 }

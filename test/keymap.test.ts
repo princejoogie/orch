@@ -237,8 +237,8 @@ describe("keymap dispatcher", () => {
     expect(interrupted).toBe(true)
   })
 
-  test("add session dialog tabs between input, worktree, and model selectors", () => {
-    const focus: { current: "input" | "worktree" | "model-provider" | "model" } = { current: "input" }
+  test("add session dialog tabs between input, worktree, model, and variant selectors", () => {
+    const focus: { current: "input" | "worktree" | "model-provider" | "model" | "variant" } = { current: "input" }
     const moves: string[] = []
     let openedDeleteWorktree = false
     let closed = false
@@ -247,6 +247,7 @@ describe("keymap dispatcher", () => {
         worktreeCount: 2,
         providerCount: 2,
         modelCount: 2,
+        variantCount: 2,
         get focus() {
           return focus.current
         },
@@ -254,7 +255,7 @@ describe("keymap dispatcher", () => {
           closed = true
         },
         moveFocus: (delta) => {
-          const order = ["input", "worktree", "model-provider"] as const
+          const order = ["input", "worktree", "model-provider", "variant"] as const
           const currentIndex =
             focus.current === "model" ? order.indexOf("model-provider") : order.indexOf(focus.current)
           focus.current = order[(currentIndex + delta + order.length) % order.length] ?? "input"
@@ -265,7 +266,7 @@ describe("keymap dispatcher", () => {
         },
         moveModelSelector: (delta) => moves.push(`model:${delta}`),
         commitModelSelector: () => {
-          focus.current = focus.current === "model-provider" ? "model" : "input"
+          focus.current = focus.current === "model-provider" ? "model" : focus.current === "model" ? "variant" : "input"
         },
         canRemoveWorktree: true,
         removeWorktree: () => {
@@ -300,7 +301,12 @@ describe("keymap dispatcher", () => {
     expect(focus.current).toBe("model")
     expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("variant")
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
     expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
+    expect(focus.current).toBe("variant")
     expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
     expect(focus.current).toBe("model-provider")
     expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
@@ -310,8 +316,61 @@ describe("keymap dispatcher", () => {
     expect(dispatcher.dispatch(parseKey("k")).kind).toBe("no-match")
     expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
 
-    expect(moves).toEqual(["worktree:1", "worktree:1", "worktree:-1", "model:1", "model:1"])
+    expect(moves).toEqual(["worktree:1", "worktree:1", "worktree:-1", "model:1", "model:1", "model:1"])
     expect(openedDeleteWorktree).toBe(true)
+    expect(closed).toBe(true)
+  })
+
+  test("prompt dialog tabs between input, model, and variant selectors", () => {
+    const focus: { current: "input" | "model-provider" | "model" | "variant" } = { current: "input" }
+    const moves: string[] = []
+    let closed = false
+    const ctx: DashboardKeymapCtx = {
+      addSessionDialog: null,
+      deleteWorktreeDialog: null,
+      promptDialog: {
+        providerCount: 2,
+        modelCount: 2,
+        variantCount: 2,
+        get focus() {
+          return focus.current
+        },
+        close: () => {
+          closed = true
+        },
+        moveFocus: (delta) => {
+          const order = ["input", "model-provider", "variant"] as const
+          const currentIndex =
+            focus.current === "model" ? order.indexOf("model-provider") : order.indexOf(focus.current)
+          focus.current = order[(currentIndex + delta + order.length) % order.length] ?? "input"
+        },
+        moveModelSelector: (delta) => moves.push(`model:${delta}`),
+        commitModelSelector: () => {
+          focus.current = focus.current === "model-provider" ? "model" : focus.current === "model" ? "variant" : "input"
+        },
+      },
+      deleteSessionDialog: null,
+      interruptSessionDialog: null,
+      search: null,
+      listNav: null,
+    }
+    const dispatcher = createDispatcher(dashboardPageKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("no-match")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("model-provider")
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("model")
+    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("variant")
+    expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(moves).toEqual(["model:1", "model:1", "model:-1"])
     expect(closed).toBe(true)
   })
 

@@ -63,6 +63,7 @@ function useSettingsController(): SettingsController {
       try {
         await switchServer(server.url)
       } catch (settingsError) {
+        console.error("Failed to switch server", settingsError)
         const detail = errorMessage(settingsError)
         globalStoreRef.current.setSettingsError(detail)
         globalStoreRef.current.addToast({ status: "error", title: "Failed to switch server", detail })
@@ -87,6 +88,7 @@ function useSettingsController(): SettingsController {
         globalStoreRef.current.syncSettingsFromConfig(nextConfig)
         globalStoreRef.current.bumpSettingsClearVersion()
       } catch (settingsError) {
+        console.error("Failed to save server", settingsError)
         const detail = errorMessage(settingsError)
         globalStoreRef.current.setSettingsError(detail)
         globalStoreRef.current.addToast({ status: "error", title: "Failed to save server", detail })

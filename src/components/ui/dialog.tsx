@@ -472,7 +472,10 @@ export function DialogTextarea({
   placeholder,
   focused,
   height,
+  footer,
+  footerHeight = 0,
   clearVersion,
+  onFocus,
   onInput,
   onSubmit,
 }: {
@@ -480,11 +483,22 @@ export function DialogTextarea({
   placeholder: string
   focused: boolean
   height: number
+  footer?: ReactNode | undefined
+  footerHeight?: number | undefined
   clearVersion: number
+  onFocus?: (() => void) | undefined
   onInput: (value: string) => void
   onSubmit: (value: string) => void
 }) {
   const textareaRef = useRef<TextareaRenderable>(null)
+  const focusMouseProps = onFocus
+    ? {
+        onMouseDown: (event: MouseEvent) => {
+          mouseAction(event)
+          onFocus()
+        },
+      }
+    : {}
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -494,7 +508,7 @@ export function DialogTextarea({
   return (
     <box
       style={{
-        height: height + 2,
+        height: height + 2 + footerHeight,
         border: true,
         borderColor: DIALOG_FIELD_BORDER,
         paddingLeft: 1,
@@ -502,19 +516,22 @@ export function DialogTextarea({
         marginBottom: 1,
       }}
     >
-      <textarea
-        ref={textareaRef}
-        placeholder={placeholder}
-        initialValue=""
-        focused={focused}
-        style={{ width: "100%", height, wrapMode: "word" }}
-        keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
-        onContentChange={() => {
-          const nextValue = textareaRef.current?.plainText ?? value
-          onInput(nextValue)
-        }}
-        onSubmit={() => onSubmit(textareaRef.current?.plainText ?? value)}
-      />
+      <box style={{ height, width: "100%" }} {...focusMouseProps}>
+        <textarea
+          ref={textareaRef}
+          placeholder={placeholder}
+          initialValue=""
+          focused={focused}
+          style={{ width: "100%", height, wrapMode: "word" }}
+          keyBindings={PROMPT_TEXTAREA_KEY_BINDINGS}
+          onContentChange={() => {
+            const nextValue = textareaRef.current?.plainText ?? value
+            onInput(nextValue)
+          }}
+          onSubmit={() => onSubmit(textareaRef.current?.plainText ?? value)}
+        />
+      </box>
+      {footer}
     </box>
   )
 }

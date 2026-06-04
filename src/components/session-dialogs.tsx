@@ -1,5 +1,6 @@
-import { TextAttributes, type MouseEvent, type ScrollBoxRenderable } from "@opentui/core"
-import { useRef } from "react"
+import { TextAttributes } from "@opentui/core"
+import { useQuery } from "@tanstack/react-query"
+import { useEffect } from "react"
 import {
   DialogError,
   DialogLabel,
@@ -13,115 +14,391 @@ import {
 import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
 import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { clamp, wrapText, type ModelProviderOption, type WorktreeOption } from "../lib/utils.ts"
-import type { SessionHistoryMessage } from "../opencode.ts"
+import { clamp, errorMessage, wrapText, type ModelProviderOption, type WorktreeOption } from "../lib/utils.ts"
+import {
+  loadDefaultModel,
+  loadModelProviders,
+  loadSessionHistory,
+  type DefaultModelOption,
+  type SessionHistoryMessage,
+} from "../opencode.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
+import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
+
+type PromptHistoryLine = {
+  key: string
+  text: string
+  role?: SessionHistoryMessage["role"] | undefined
+  roleLabel?: string | undefined
+  queued?: boolean | undefined
+}
+
+const PROMPT_USER_BULLET = theme.primary
+const PROMPT_ASSISTANT_BULLET = theme.info
+const PROMPT_USER_BACKGROUND = theme.backgroundElement
 
 export function PromptDialog({ width, height }: { width: number; height: number }) {
   const controller = useDashboardControllerContext()
   const dashboardStore = useDashboardStore()
+  const setPromptModelOptions = useDashboardStore((store) => store.setPromptModelOptions)
+  const globalStore = useGlobalStore()
   const state = dashboardStore.promptDialog
-  const historyRef = useRef<ScrollBoxRenderable>(null)
+  const promptSessionId = state?.row.id
+  const promptModelProviderID = state?.row.model?.providerID
+  const promptModelID = state?.row.model?.modelID
+  const promptModelVariant = state?.row.model?.variant
+  const modelProvidersQuery = useQuery({
+    queryKey: [
+      "opencode-dialog-model-providers",
+      globalStore.config.activeServerUrl,
+      state?.row.directory,
+      state?.row.workspaceID,
+    ],
+    queryFn: ({ signal }) => {
+      if (!state) return []
+      return loadModelProviders({
+        serverUrl: globalStore.config.activeServerUrl,
+        directory: state.row.directory,
+        workspaceID: state.row.workspaceID,
+        signal,
+      })
+    },
+    enabled: state !== undefined,
+  })
+  const defaultModelQuery = useQuery({
+    queryKey: [
+      "opencode-dialog-default-model",
+      globalStore.config.activeServerUrl,
+      state?.row.directory,
+      state?.row.workspaceID,
+    ],
+    queryFn: ({ signal }) => {
+      if (!state) return null
+      return loadDefaultModel({
+        serverUrl: globalStore.config.activeServerUrl,
+        directory: state.row.directory,
+        workspaceID: state.row.workspaceID,
+        signal,
+      }).then((model) => model ?? null)
+    },
+    enabled: state !== undefined,
+  })
+  const historyQuery = useQuery({
+    queryKey: [
+      "opencode-session-history",
+      globalStore.config.activeServerUrl,
+      state?.row.id,
+      state?.row.directory,
+      state?.row.workspaceID,
+      state?.row.updated,
+    ],
+    queryFn: ({ signal }) => {
+      if (!state) return []
+      return loadSessionHistory({
+        sessionID: state.row.id,
+        directory: state.row.directory,
+        workspaceID: state.row.workspaceID,
+        serverUrl: globalStore.config.activeServerUrl,
+        signal,
+      })
+    },
+    enabled: state !== undefined,
+  })
+
+  useEffect(() => {
+    if (!promptSessionId || !modelProvidersQuery.data || defaultModelQuery.isPending) return
+    const promptModel =
+      promptModelProviderID && promptModelID
+        ? {
+            providerID: promptModelProviderID,
+            modelID: promptModelID,
+            ...(promptModelVariant !== undefined ? { variant: promptModelVariant } : {}),
+          }
+        : undefined
+    const selection = modelSelectionForDefault(modelProvidersQuery.data, promptModel ?? defaultModelQuery.data)
+    setPromptModelOptions(
+      promptSessionId,
+      modelProvidersQuery.data,
+      selection.modelProviderIndex,
+      selection.modelIndex,
+      selection.variantIndex,
+    )
+  }, [
+    defaultModelQuery.data,
+    defaultModelQuery.isPending,
+    modelProvidersQuery.data,
+    setPromptModelOptions,
+    promptModelID,
+    promptModelProviderID,
+    promptModelVariant,
+    promptSessionId,
+  ])
 
   if (!state) return null
 
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
-  const historyHeight = 10
+  const selectorFooterHeight = 1
+  const labelHeight = 1
+  const historyHeight = clamp(height - (state.error ? 20 : 19), 8, 28)
   const historyBlockHeight = historyHeight + 1
-  const inputBlockHeight = inputHeight + 3
-  const bodyHeight = 1 + historyBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
-  const historyLines = state.loadingPreview
+  const inputBlockHeight = inputHeight + 3 + selectorFooterHeight
+  const modelProviderSelectorFocused = state.focus === "model-provider"
+  const modelSelectorFocused = state.focus === "model"
+  const variantSelectorFocused = state.focus === "variant"
+  const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
+  const selectorWidth = Math.max(1, dialogWidth - 4)
+  const bodyHeight = labelHeight + historyBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
+  const historyLineWidth = dialogWidth - 8
+  const historyMessages = historyQuery.data ?? withoutQueuedMarkers(state.row.messages)
+  const modelLoadError = modelProvidersQuery.error
+    ? errorMessage(modelProvidersQuery.error)
+    : defaultModelQuery.error
+      ? errorMessage(defaultModelQuery.error)
+      : undefined
+  const historyLines = historyQuery.isPending
     ? [{ key: "loading", text: "Loading messages..." }]
-    : promptHistoryLines(state.row.messages, dialogWidth - 8)
+    : [
+        ...(historyQuery.error && !historyQuery.data
+          ? [{ key: "load-error", text: `Failed to load full history: ${errorMessage(historyQuery.error)}` }]
+          : []),
+        ...promptHistoryLines(historyMessages, historyLineWidth),
+      ]
   const dialogHeight = Math.min(height - 2, bodyHeight + 7)
-  const handleHistoryScroll = (event: MouseEvent) => {
-    if (event.scroll?.direction !== "up" || state.loadingMorePreview || !state.row.hasMoreMessages) return
-    if ((historyRef.current?.scrollTop ?? 0) <= 1) void controller.loadMorePromptMessages()
-  }
-
+  const modelSelectorLeft = Math.max(1, Math.floor((width - dialogWidth) / 2)) + 2
+  const modelSelectorTop =
+    Math.max(1, Math.floor((height - dialogHeight) / 2)) + 4 + labelHeight + historyBlockHeight + 1 + inputHeight
+  const variantSelectorLeft = modelSelectorLeft
+  const variantSelectorTop = modelSelectorTop
+  const selectedProvider = state.modelProviders[state.modelProviderIndex]
+  const selectedModel = selectedProvider?.models[state.modelIndex]
+  const variants = variantOptions(selectedModel)
+  const selectedVariant = variants[state.variantIndex]
+  const modelMenuItems: MenuItem[] = modelProviderSelectorFocused
+    ? state.modelProviders.map((provider, index) => ({
+        label: provider.name,
+        shortcut: "",
+        run: () => {
+          dashboardStore.setPromptModelProviderIndex(index)
+          dashboardStore.setPromptFocus("model")
+        },
+      }))
+    : (selectedProvider?.models.map((model, index) => ({
+        label: model.name,
+        shortcut: "",
+        run: () => {
+          dashboardStore.setPromptModelIndex(index)
+          dashboardStore.setPromptFocus("input")
+        },
+      })) ?? [])
+  const modelOptionCount = modelProviderSelectorFocused
+    ? state.modelProviders.length
+    : (selectedProvider?.models.length ?? 0)
+  const selectedModelMenuIndex = modelProviderSelectorFocused ? state.modelProviderIndex : state.modelIndex
+  const modelVisibleCount = Math.min(modelOptionCount, 6)
+  const modelVisibleStart = clamp(
+    selectedModelMenuIndex - modelVisibleCount + 1,
+    0,
+    Math.max(0, modelOptionCount - modelVisibleCount),
+  )
+  const variantMenuItems: MenuItem[] = variants.map((variant, index) => ({
+    label: variant ?? "Default",
+    shortcut: "",
+    run: () => {
+      dashboardStore.setPromptVariantIndex(index)
+      dashboardStore.setPromptFocus("input")
+    },
+  }))
+  const variantOptionCount = variants.length
+  const variantVisibleCount = Math.min(variantOptionCount, 6)
+  const variantVisibleStart = clamp(
+    state.variantIndex - variantVisibleCount + 1,
+    0,
+    Math.max(0, variantOptionCount - variantVisibleCount),
+  )
   return (
-    <StandardDialogFrame
-      screenWidth={width}
-      screenHeight={height}
-      width={dialogWidth}
-      height={dialogHeight}
-      danger={Boolean(state.error)}
-      title="Prompt session"
-      headerRight={state.sending ? "sending" : undefined}
-      subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
-      onClose={dashboardStore.closePromptDialog}
-      footer={
-        <DialogFooterActions
-          width={dialogWidth - 4}
-          actionsWidth={25}
-          hints={<HintRow items={[{ key: "shift-enter", label: "newline" }]} />}
-        >
-          <ButtonRow width={25}>
-            <Button
-              label="Send"
-              shortcut="↵"
-              width={10}
-              disabled={state.sending || state.value.trim().length === 0}
-              onPress={() => void controller.submitPrompt(state.value)}
-            />
-            <ButtonSpacer />
-            <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closePromptDialog} />
-          </ButtonRow>
-        </DialogFooterActions>
-      }
-    >
-      <DialogLabel>Messages:</DialogLabel>
-      <scrollbox
-        ref={historyRef}
-        focusable={false}
-        onMouseScroll={handleHistoryScroll}
-        style={{
-          contentOptions: { flexDirection: "column" },
-          height: historyHeight,
-          marginBottom: 1,
-          paddingLeft: 1,
-          paddingRight: 1,
-          scrollX: false,
-          scrollY: true,
-          stickyScroll: true,
-          stickyStart: "bottom",
-          verticalScrollbarOptions: { showArrows: false },
-          viewportCulling: true,
-        }}
+    <>
+      <StandardDialogFrame
+        screenWidth={width}
+        screenHeight={height}
+        width={dialogWidth}
+        height={dialogHeight}
+        danger={Boolean(state.error)}
+        title="Prompt session"
+        headerRight={state.sending ? "sending" : undefined}
+        subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
+        onClose={dashboardStore.closePromptDialog}
+        footer={
+          <DialogFooterActions
+            width={dialogWidth - 4}
+            actionsWidth={25}
+            hints={
+              <HintRow
+                items={[
+                  { key: "tab", label: "focus" },
+                  {
+                    key: "j/k",
+                    label: variantSelectorFocused ? "variant" : "model",
+                    when: modelSelectorActive || variantSelectorFocused,
+                    disabled: variantSelectorFocused ? variantOptionCount <= 1 : modelOptionCount <= 1,
+                  },
+                  { key: "shift-enter", label: "newline" },
+                ]}
+              />
+            }
+          >
+            <ButtonRow width={25}>
+              <Button
+                label="Send"
+                shortcut="↵"
+                width={10}
+                disabled={state.sending || state.value.trim().length === 0 || !selectedModel}
+                onPress={() => void controller.submitPrompt(state.value)}
+              />
+              <ButtonSpacer />
+              <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closePromptDialog} />
+            </ButtonRow>
+          </DialogFooterActions>
+        }
       >
-        {state.loadingMorePreview ? <text content="Loading older messages..." style={{ fg: theme.textMuted }} /> : null}
-        {historyLines.map((line) => (
-          <text key={line.key} content={line.text} style={{ fg: theme.textMuted }} />
-        ))}
-      </scrollbox>
-      <DialogTextarea
-        value={state.value}
-        placeholder={state.sending ? "Sending..." : "Type prompt"}
-        focused={!state.sending}
-        height={inputHeight}
-        clearVersion={dashboardStore.promptClearVersion}
-        onInput={dashboardStore.setPromptValue}
-        onSubmit={(value) => void controller.submitPrompt(value)}
-      />
-      <DialogError error={state.error} width={dialogWidth} />
-    </StandardDialogFrame>
+        <box style={{ height: labelHeight }}>
+          <DialogLabel>Messages:</DialogLabel>
+        </box>
+        <scrollbox
+          focusable={false}
+          style={{
+            contentOptions: { flexDirection: "column" },
+            height: historyHeight,
+            marginBottom: 1,
+            paddingLeft: 1,
+            paddingRight: 1,
+            scrollX: false,
+            scrollY: true,
+            stickyScroll: true,
+            stickyStart: "bottom",
+            verticalScrollbarOptions: { showArrows: false },
+            viewportCulling: true,
+          }}
+        >
+          {historyLines.map((line) => (
+            <PromptHistoryText key={line.key} line={line} width={historyLineWidth} />
+          ))}
+        </scrollbox>
+        <DialogTextarea
+          value={state.value}
+          placeholder={state.sending ? "Sending..." : "Type prompt"}
+          focused={!state.sending && state.focus === "input"}
+          height={inputHeight}
+          footer={
+            <ModelVariantFooter
+              width={Math.max(1, selectorWidth - 2)}
+              providerName={selectedProvider?.name}
+              modelName={selectedModel?.name}
+              variant={selectedVariant}
+              active={
+                modelProviderSelectorFocused
+                  ? "provider"
+                  : modelSelectorFocused
+                    ? "model"
+                    : variantSelectorFocused
+                      ? "variant"
+                      : undefined
+              }
+              onProviderFocus={() => dashboardStore.setPromptFocus("model-provider")}
+              onModelFocus={() => dashboardStore.setPromptFocus("model")}
+              onVariantFocus={() => dashboardStore.setPromptFocus("variant")}
+            />
+          }
+          footerHeight={selectorFooterHeight}
+          clearVersion={dashboardStore.promptClearVersion}
+          onFocus={() => dashboardStore.setPromptFocus("input")}
+          onInput={dashboardStore.setPromptValue}
+          onSubmit={(value) => void controller.submitPrompt(value)}
+        />
+        <DialogError error={state.error ?? modelLoadError} width={dialogWidth} />
+      </StandardDialogFrame>
+      {modelSelectorActive && modelMenuItems.length > 0 ? (
+        <MenuDropdown
+          left={modelSelectorLeft}
+          top={modelSelectorTop + 1}
+          items={modelMenuItems}
+          selectedIndex={selectedModelMenuIndex}
+          visibleStart={modelVisibleStart}
+          visibleCount={modelVisibleCount}
+          maxWidth={selectorWidth}
+          showShortcuts={false}
+          onSelect={(index) => {
+            if (modelProviderSelectorFocused) dashboardStore.setPromptModelProviderIndex(index)
+            else dashboardStore.setPromptModelIndex(index)
+          }}
+          onClose={() => dashboardStore.setPromptFocus("input")}
+        />
+      ) : null}
+      {variantSelectorFocused && variantMenuItems.length > 0 ? (
+        <MenuDropdown
+          left={variantSelectorLeft}
+          top={variantSelectorTop + 1}
+          items={variantMenuItems}
+          selectedIndex={state.variantIndex}
+          visibleStart={variantVisibleStart}
+          visibleCount={variantVisibleCount}
+          maxWidth={selectorWidth}
+          showShortcuts={false}
+          onSelect={(index) => dashboardStore.setPromptVariantIndex(index)}
+          onClose={() => dashboardStore.setPromptFocus("input")}
+        />
+      ) : null}
+    </>
   )
 }
 
-function promptHistoryLines(messages: SessionHistoryMessage[], width: number) {
+function PromptHistoryText({ line, width }: { line: PromptHistoryLine; width: number }) {
+  const bg = line.role === "user" ? PROMPT_USER_BACKGROUND : undefined
+
+  if (line.roleLabel) {
+    const bulletColor = line.queued
+      ? theme.warning
+      : line.role === "user"
+        ? PROMPT_USER_BULLET
+        : PROMPT_ASSISTANT_BULLET
+    const rest = ` ${line.roleLabel}:`
+    const padding = " ".repeat(Math.max(0, width - 1 - rest.length))
+
+    return (
+      <text style={{ fg: theme.textMuted, ...(bg ? { bg } : {}) }}>
+        <span fg={bulletColor}>●</span>
+        <span>{rest}</span>
+        <span>{padding}</span>
+      </text>
+    )
+  }
+
+  return <text content={fitCell(line.text, width)} style={{ fg: theme.textMuted, ...(bg ? { bg } : {}) }} />
+}
+
+function promptHistoryLines(messages: SessionHistoryMessage[], width: number): PromptHistoryLine[] {
   if (messages.length === 0) return [{ key: "empty", text: "No previous messages." }]
 
   return messages.flatMap((message, index) => {
     const lines = wrapText(message.text, Math.max(1, width), Number.MAX_SAFE_INTEGER).map((line) => ({
       key: `${index}:${line.key}`,
       text: line.text,
+      role: message.role,
     }))
     const previousMessage = messages[index - 1]
-    const showRole = !previousMessage || previousMessage.role !== message.role
+    const showRole =
+      !previousMessage || previousMessage.role !== message.role || previousMessage.queued !== message.queued
     const roleLine = showRole
-      ? [{ key: `${index}:role`, text: `● ${message.role === "user" ? "User" : "Assistant"}:` }]
+      ? [
+          {
+            key: `${index}:role`,
+            text: "",
+            role: message.role,
+            roleLabel: message.role === "user" ? (message.queued ? "User (queued)" : "User") : "Assistant",
+            queued: message.queued,
+          },
+        ]
       : []
     const spacerLine = index < messages.length - 1 ? [{ key: `${index}:spacer`, text: " " }] : []
 
@@ -129,29 +406,118 @@ function promptHistoryLines(messages: SessionHistoryMessage[], width: number) {
   })
 }
 
+function withoutQueuedMarkers(messages: SessionHistoryMessage[]): SessionHistoryMessage[] {
+  return messages.map(({ queued: _queued, ...message }) => message)
+}
+
+function modelSelectionForDefault(
+  providers: ModelProviderOption[],
+  defaultModel: DefaultModelOption | null | undefined,
+): { modelProviderIndex: number; modelIndex: number; variantIndex: number } {
+  if (!defaultModel) return { modelProviderIndex: 0, modelIndex: 0, variantIndex: 0 }
+
+  const modelProviderIndex = providers.findIndex((provider) => provider.id === defaultModel.providerID)
+  if (modelProviderIndex === -1) return { modelProviderIndex: 0, modelIndex: 0, variantIndex: 0 }
+
+  const provider = providers[modelProviderIndex]
+  const modelIndex = provider?.models.findIndex((model) => model.modelID === defaultModel.modelID) ?? -1
+  if (modelIndex === -1) return { modelProviderIndex: 0, modelIndex: 0, variantIndex: 0 }
+
+  const model = provider?.models[modelIndex]
+  const variantIndex = defaultModel.variant
+    ? variantOptions(model).findIndex((variant) => variant === defaultModel.variant)
+    : 0
+
+  return { modelProviderIndex, modelIndex, variantIndex: Math.max(0, variantIndex) }
+}
+
 export function AddSessionDialog({ width, height }: { width: number; height: number }) {
   const controller = useDashboardControllerContext()
   const dashboardStore = useDashboardStore()
+  const setAddSessionModelOptions = useDashboardStore((store) => store.setAddSessionModelOptions)
+  const globalStore = useGlobalStore()
   const state = dashboardStore.addSessionDialog
+  const addProjectDirectory = state?.projectDirectory
+  const initialModelProviderID = state?.initialModel?.providerID
+  const initialModelID = state?.initialModel?.modelID
+  const initialModelVariant = state?.initialModel?.variant
+  const modelProvidersQuery = useQuery({
+    queryKey: ["opencode-dialog-model-providers", globalStore.config.activeServerUrl, state?.projectDirectory],
+    queryFn: ({ signal }) => {
+      if (!state) return []
+      return loadModelProviders({
+        serverUrl: globalStore.config.activeServerUrl,
+        directory: state.projectDirectory,
+        signal,
+      })
+    },
+    enabled: state !== undefined,
+  })
+  const defaultModelQuery = useQuery({
+    queryKey: ["opencode-dialog-default-model", globalStore.config.activeServerUrl, state?.projectDirectory],
+    queryFn: ({ signal }) => {
+      if (!state) return null
+      return loadDefaultModel({
+        serverUrl: globalStore.config.activeServerUrl,
+        directory: state.projectDirectory,
+        signal,
+      }).then((model) => model ?? null)
+    },
+    enabled: state !== undefined,
+  })
+
+  useEffect(() => {
+    if (!addProjectDirectory || !modelProvidersQuery.data || defaultModelQuery.isPending) return
+    const initialModel =
+      initialModelProviderID && initialModelID
+        ? {
+            providerID: initialModelProviderID,
+            modelID: initialModelID,
+            ...(initialModelVariant !== undefined ? { variant: initialModelVariant } : {}),
+          }
+        : undefined
+    const selection = modelSelectionForDefault(modelProvidersQuery.data, initialModel ?? defaultModelQuery.data)
+    setAddSessionModelOptions(
+      addProjectDirectory,
+      modelProvidersQuery.data,
+      selection.modelProviderIndex,
+      selection.modelIndex,
+      selection.variantIndex,
+    )
+  }, [
+    defaultModelQuery.data,
+    defaultModelQuery.isPending,
+    modelProvidersQuery.data,
+    addProjectDirectory,
+    initialModelID,
+    initialModelProviderID,
+    initialModelVariant,
+    setAddSessionModelOptions,
+  ])
 
   if (!state) return null
 
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
-  const inputBlockHeight = inputHeight + 3
+  const selectorFooterHeight = 1
+  const inputBlockHeight = inputHeight + 3 + selectorFooterHeight
+  const worktreeBlockHeight = 1
   const worktreeSelectorFocused = state.focus === "worktree"
   const modelProviderSelectorFocused = state.focus === "model-provider"
   const modelSelectorFocused = state.focus === "model"
+  const variantSelectorFocused = state.focus === "variant"
   const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
   const selectorWidth = Math.max(1, dialogWidth - 4)
-  const bodyHeight = 3 + inputBlockHeight + (state.error ? 1 : 0)
+  const bodyHeight = worktreeBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 6))
   const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
   const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
   const worktreeSelectorLeft = dialogLeft + 2
   const worktreeSelectorTop = dialogTop + 3
   const modelSelectorLeft = dialogLeft + 2
-  const modelSelectorTop = dialogTop + 4
+  const modelSelectorTop = dialogTop + 3 + worktreeBlockHeight + 1 + inputHeight
+  const variantSelectorLeft = dialogLeft + 2
+  const variantSelectorTop = modelSelectorTop
   const worktreeOptionCount = state.worktrees.length + 1
   const selectedDisplayWorktreeIndex = toDisplayWorktreeIndex(state.worktreeIndex, state.worktrees.length)
   const worktreeVisibleCount = Math.min(worktreeOptionCount, 6)
@@ -180,6 +546,8 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   ]
   const selectedProvider = state.modelProviders[state.modelProviderIndex]
   const selectedModel = selectedProvider?.models[state.modelIndex]
+  const variants = variantOptions(selectedModel)
+  const selectedVariant = variants[state.variantIndex]
   const modelMenuItems: MenuItem[] = modelProviderSelectorFocused
     ? state.modelProviders.map((provider, index) => ({
         label: provider.name,
@@ -207,6 +575,26 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     0,
     Math.max(0, modelOptionCount - modelVisibleCount),
   )
+  const variantMenuItems: MenuItem[] = variants.map((variant, index) => ({
+    label: variant ?? "Default",
+    shortcut: "",
+    run: () => {
+      dashboardStore.setAddSessionVariantIndex(index)
+      dashboardStore.setAddSessionFocus("input")
+    },
+  }))
+  const variantOptionCount = variants.length
+  const variantVisibleCount = Math.min(variantOptionCount, 6)
+  const variantVisibleStart = clamp(
+    state.variantIndex - variantVisibleCount + 1,
+    0,
+    Math.max(0, variantOptionCount - variantVisibleCount),
+  )
+  const modelLoadError = modelProvidersQuery.error
+    ? errorMessage(modelProvidersQuery.error)
+    : defaultModelQuery.error
+      ? errorMessage(defaultModelQuery.error)
+      : undefined
 
   return (
     <>
@@ -229,9 +617,13 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
                   { key: "tab", label: "focus" },
                   {
                     key: "j/k",
-                    label: worktreeSelectorFocused ? "worktree" : "model",
-                    when: worktreeSelectorFocused || modelSelectorActive,
-                    disabled: worktreeSelectorFocused ? worktreeOptionCount <= 1 : modelOptionCount <= 1,
+                    label: worktreeSelectorFocused ? "worktree" : variantSelectorFocused ? "variant" : "model",
+                    when: worktreeSelectorFocused || modelSelectorActive || variantSelectorFocused,
+                    disabled: worktreeSelectorFocused
+                      ? worktreeOptionCount <= 1
+                      : variantSelectorFocused
+                        ? variantOptionCount <= 1
+                        : modelOptionCount <= 1,
                   },
                   { key: "shift-enter", label: "newline" },
                 ]}
@@ -260,24 +652,38 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           marginBottom={0}
           onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
         />
-        <ModelSelector
-          width={selectorWidth}
-          providers={state.modelProviders}
-          selectedProviderIndex={state.modelProviderIndex}
-          selectedModelIndex={state.modelIndex}
-          focused={modelSelectorActive}
-          onFocus={() => dashboardStore.setAddSessionFocus("model-provider")}
-        />
         <DialogTextarea
           value={state.value}
           placeholder={state.sending ? "Creating..." : "Type first prompt"}
           focused={!state.sending && state.focus === "input"}
           height={inputHeight}
+          footer={
+            <ModelVariantFooter
+              width={Math.max(1, selectorWidth - 2)}
+              providerName={selectedProvider?.name}
+              modelName={selectedModel?.name}
+              variant={selectedVariant}
+              active={
+                modelProviderSelectorFocused
+                  ? "provider"
+                  : modelSelectorFocused
+                    ? "model"
+                    : variantSelectorFocused
+                      ? "variant"
+                      : undefined
+              }
+              onProviderFocus={() => dashboardStore.setAddSessionFocus("model-provider")}
+              onModelFocus={() => dashboardStore.setAddSessionFocus("model")}
+              onVariantFocus={() => dashboardStore.setAddSessionFocus("variant")}
+            />
+          }
+          footerHeight={selectorFooterHeight}
           clearVersion={dashboardStore.addSessionClearVersion}
+          onFocus={() => dashboardStore.setAddSessionFocus("input")}
           onInput={dashboardStore.setAddSessionValue}
           onSubmit={(value) => void controller.submitAddSession(value)}
         />
-        <DialogError error={state.error} width={dialogWidth} />
+        <DialogError error={state.error ?? modelLoadError} width={dialogWidth} />
       </StandardDialogFrame>
       {worktreeSelectorFocused && worktreeMenuItems.length > 0 ? (
         <MenuDropdown
@@ -292,7 +698,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           onSelect={(index) =>
             dashboardStore.setAddSessionWorktreeIndex(fromDisplayWorktreeIndex(index, state.worktrees.length))
           }
-          onClose={() => {}}
+          onClose={() => dashboardStore.setAddSessionFocus("input")}
         />
       ) : null}
       {modelSelectorActive && modelMenuItems.length > 0 ? (
@@ -309,7 +715,21 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
             if (modelProviderSelectorFocused) dashboardStore.setAddSessionModelProviderIndex(index)
             else dashboardStore.setAddSessionModelIndex(index)
           }}
-          onClose={() => {}}
+          onClose={() => dashboardStore.setAddSessionFocus("input")}
+        />
+      ) : null}
+      {variantSelectorFocused && variantMenuItems.length > 0 ? (
+        <MenuDropdown
+          left={variantSelectorLeft}
+          top={variantSelectorTop + 1}
+          items={variantMenuItems}
+          selectedIndex={state.variantIndex}
+          visibleStart={variantVisibleStart}
+          visibleCount={variantVisibleCount}
+          maxWidth={selectorWidth}
+          showShortcuts={false}
+          onSelect={(index) => dashboardStore.setAddSessionVariantIndex(index)}
+          onClose={() => dashboardStore.setAddSessionFocus("input")}
         />
       ) : null}
     </>
@@ -357,46 +777,112 @@ function WorktreeSelector({
   )
 }
 
-function ModelSelector({
+function ModelVariantFooter({
   width,
-  providers,
-  selectedProviderIndex,
-  selectedModelIndex,
-  focused,
+  providerName,
+  modelName,
+  variant,
+  active,
+  onProviderFocus,
+  onModelFocus,
+  onVariantFocus,
+}: {
+  width: number
+  providerName?: string | undefined
+  modelName?: string | undefined
+  variant?: string | undefined
+  active?: "provider" | "model" | "variant" | undefined
+  onProviderFocus: () => void
+  onModelFocus: () => void
+  onVariantFocus: () => void
+}) {
+  const modelText = modelName ?? "No model"
+  const providerText = providerName ?? "No provider"
+  const variantText = variant ?? "Default"
+  const separator = " • "
+  const separatorWidth = separator.length
+  const variantWidth = Math.min(variantText.length, Math.max(1, width - separatorWidth * 2 - 2))
+  const modelProviderTextWidth = Math.min(
+    modelText.length + separatorWidth + providerText.length,
+    Math.max(1, width - variantWidth - separatorWidth),
+  )
+  const providerWidth = Math.min(providerText.length, Math.max(1, modelProviderTextWidth - separatorWidth - 1))
+  const modelWidth = Math.max(1, modelProviderTextWidth - providerWidth - separatorWidth)
+  const modelProviderActive = active === "model" || active === "provider"
+
+  return (
+    <box style={{ height: 1, width, flexDirection: "row" }}>
+      <box style={{ height: 1, width: modelProviderTextWidth, flexDirection: "row" }}>
+        <SelectorFooterSegment
+          width={modelWidth}
+          text={modelText}
+          fg={theme.text}
+          active={modelProviderActive}
+          onFocus={onModelFocus}
+        />
+        <box
+          style={{ height: 1, width: separatorWidth }}
+          onMouseDown={(event) => {
+            mouseAction(event)
+            onProviderFocus()
+          }}
+        >
+          <text
+            content={separator}
+            style={{ fg: theme.textMuted, ...(modelProviderActive ? { bg: theme.backgroundElement } : {}) }}
+          />
+        </box>
+        <SelectorFooterSegment
+          width={providerWidth}
+          text={providerText}
+          fg={theme.textMuted}
+          active={modelProviderActive}
+          onFocus={onProviderFocus}
+        />
+      </box>
+      <text content={separator} style={{ fg: theme.textMuted }} />
+      <SelectorFooterSegment
+        width={variantWidth}
+        text={variantText}
+        fg={theme.warning}
+        active={active === "variant"}
+        onFocus={onVariantFocus}
+      />
+    </box>
+  )
+}
+
+function SelectorFooterSegment({
+  width,
+  text,
+  fg,
+  active,
   onFocus,
 }: {
   width: number
-  providers: ModelProviderOption[]
-  selectedProviderIndex: number
-  selectedModelIndex: number
-  focused: boolean
+  text: string
+  fg: string
+  active: boolean
   onFocus: () => void
 }) {
-  const selectedProvider = providers[selectedProviderIndex]
-  const selected = selectedProvider?.models[selectedModelIndex]
-  const fieldWidth = Math.max(1, width)
-  const selectedName = selected?.name ?? "No model"
-  const content = `Model: ${selectedName}`
-
   return (
     <box
-      style={{
-        height: 1,
-        width,
-        marginBottom: 1,
-      }}
+      style={{ height: 1, width }}
       onMouseDown={(event) => {
         mouseAction(event)
         onFocus()
       }}
     >
-      <TextLine width={fieldWidth} bg={focused ? theme.backgroundElement : undefined}>
-        <span fg={selected ? theme.text : theme.textMuted} {...(focused ? { attributes: TextAttributes.BOLD } : {})}>
-          {fitCell(content, fieldWidth)}
-        </span>
-      </TextLine>
+      <text
+        content={fitCell(text, width)}
+        style={{ fg, ...(active ? { bg: theme.backgroundElement, attributes: TextAttributes.BOLD } : {}) }}
+      />
     </box>
   )
+}
+
+function variantOptions(model: ModelProviderOption["models"][number] | undefined): Array<string | undefined> {
+  return [undefined, ...(model?.variants ?? [])]
 }
 
 function toDisplayWorktreeIndex(worktreeIndex: number, worktreeCount: number): number {

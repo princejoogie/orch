@@ -48,8 +48,16 @@ export type DashboardStore = {
   closeAddSessionDialog: () => void
   setAddSessionValue: (value: string) => void
   setAddSessionWorktreeIndex: (worktreeIndex: number) => void
+  setAddSessionModelOptions: (
+    projectDirectory: string,
+    modelProviders: AddSessionDialogState["modelProviders"],
+    modelProviderIndex: number,
+    modelIndex: number,
+    variantIndex: number,
+  ) => void
   setAddSessionModelProviderIndex: (modelProviderIndex: number) => void
   setAddSessionModelIndex: (modelIndex: number) => void
+  setAddSessionVariantIndex: (variantIndex: number) => void
   addAddSessionWorktree: (worktree: WorktreeOption) => void
   removeAddSessionWorktree: (directory: string) => void
   setAddSessionFocus: (focus: AddSessionDialogState["focus"]) => void
@@ -61,9 +69,19 @@ export type DashboardStore = {
   openPromptDialog: (state: PromptDialogState) => void
   closePromptDialog: () => void
   setPromptValue: (value: string) => void
+  setPromptModelOptions: (
+    sessionId: string,
+    modelProviders: PromptDialogState["modelProviders"],
+    modelProviderIndex: number,
+    modelIndex: number,
+    variantIndex: number,
+  ) => void
+  setPromptModelProviderIndex: (modelProviderIndex: number) => void
+  setPromptModelIndex: (modelIndex: number) => void
+  setPromptVariantIndex: (variantIndex: number) => void
+  setPromptFocus: (focus: PromptDialogState["focus"]) => void
   setPromptSending: () => void
-  setPromptLoadingMore: () => void
-  prependPromptMessages: (messages: SessionRow["messages"], hasMoreMessages: boolean) => void
+  setPromptSent: () => void
   setPromptError: (error: string) => void
   bumpPromptClearVersion: () => void
   openDeleteDialog: (rows: SessionRow[]) => void
@@ -138,15 +156,34 @@ function createDashboardStore() {
       set((state) => ({
         addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, worktreeIndex } : undefined,
       })),
+    setAddSessionModelOptions: (projectDirectory, modelProviders, modelProviderIndex, modelIndex, variantIndex) =>
+      set((state) => {
+        if (!state.addSessionDialog || state.addSessionDialog.projectDirectory !== projectDirectory) return state
+        return {
+          addSessionDialog: {
+            ...state.addSessionDialog,
+            modelProviders,
+            modelProviderIndex,
+            modelIndex,
+            variantIndex,
+          },
+        }
+      }),
     setAddSessionModelProviderIndex: (modelProviderIndex) =>
       set((state) => ({
         addSessionDialog: state.addSessionDialog
-          ? { ...state.addSessionDialog, modelProviderIndex, modelIndex: 0 }
+          ? { ...state.addSessionDialog, modelProviderIndex, modelIndex: 0, variantIndex: 0 }
           : undefined,
       })),
     setAddSessionModelIndex: (modelIndex) =>
       set((state) => ({
-        addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, modelIndex } : undefined,
+        addSessionDialog: state.addSessionDialog
+          ? { ...state.addSessionDialog, modelIndex, variantIndex: 0 }
+          : undefined,
+      })),
+    setAddSessionVariantIndex: (variantIndex) =>
+      set((state) => ({
+        addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, variantIndex } : undefined,
       })),
     addAddSessionWorktree: (worktree) =>
       set((state) => {
@@ -201,31 +238,48 @@ function createDashboardStore() {
       set((state) => ({
         promptDialog: state.promptDialog ? omitPromptError({ ...state.promptDialog, value }) : undefined,
       })),
+    setPromptModelOptions: (sessionId, modelProviders, modelProviderIndex, modelIndex, variantIndex) =>
+      set((state) => {
+        if (!state.promptDialog || state.promptDialog.row.id !== sessionId) return state
+        return {
+          promptDialog: {
+            ...state.promptDialog,
+            modelProviders,
+            modelProviderIndex,
+            modelIndex,
+            variantIndex,
+          },
+        }
+      }),
+    setPromptModelProviderIndex: (modelProviderIndex) =>
+      set((state) => ({
+        promptDialog: state.promptDialog
+          ? { ...state.promptDialog, modelProviderIndex, modelIndex: 0, variantIndex: 0 }
+          : undefined,
+      })),
+    setPromptModelIndex: (modelIndex) =>
+      set((state) => ({
+        promptDialog: state.promptDialog ? { ...state.promptDialog, modelIndex, variantIndex: 0 } : undefined,
+      })),
+    setPromptVariantIndex: (variantIndex) =>
+      set((state) => ({
+        promptDialog: state.promptDialog ? { ...state.promptDialog, variantIndex } : undefined,
+      })),
+    setPromptFocus: (focus) =>
+      set((state) => ({
+        promptDialog: state.promptDialog ? { ...state.promptDialog, focus } : undefined,
+      })),
     setPromptSending: () =>
       set((state) => ({
         promptDialog: state.promptDialog ? omitPromptError({ ...state.promptDialog, sending: true }) : undefined,
       })),
-    setPromptLoadingMore: () =>
+    setPromptSent: () =>
       set((state) => ({
-        promptDialog: state.promptDialog ? { ...state.promptDialog, loadingMorePreview: true } : undefined,
+        promptClearVersion: state.promptClearVersion + 1,
+        promptDialog: state.promptDialog
+          ? omitPromptError({ ...state.promptDialog, value: "", sending: false, focus: "input" })
+          : undefined,
       })),
-    prependPromptMessages: (messages, hasMoreMessages) =>
-      set((state) => {
-        if (!state.promptDialog) return { promptDialog: undefined }
-        const existingIds = new Set(state.promptDialog.row.messages.map((message) => message.id))
-        const olderMessages = messages.filter((message) => !existingIds.has(message.id))
-        return {
-          promptDialog: {
-            ...state.promptDialog,
-            loadingMorePreview: false,
-            row: {
-              ...state.promptDialog.row,
-              messages: [...olderMessages, ...state.promptDialog.row.messages],
-              hasMoreMessages,
-            },
-          },
-        }
-      }),
     setPromptError: (error) =>
       set((state) => ({
         promptDialog: state.promptDialog ? { ...state.promptDialog, sending: false, error } : undefined,
@@ -270,10 +324,14 @@ function createDashboardStore() {
       set((state) => {
         if (state.rowsByProjectId[projectId] === rows) return state
         const rowsByProjectId = { ...state.rowsByProjectId, [projectId]: rows }
-        if (state.activeTabId !== projectId) return { rowsByProjectId }
+        const promptRow = state.promptDialog ? rows.find((row) => row.id === state.promptDialog?.row.id) : undefined
+        const promptDialog =
+          state.promptDialog && promptRow ? { ...state.promptDialog, row: promptRow } : state.promptDialog
+        if (state.activeTabId !== projectId) return { rowsByProjectId, promptDialog }
 
         return {
           rowsByProjectId,
+          promptDialog,
           selectedSessionIds: retainSelectedSessionIds(
             state.selectedSessionIds,
             visibleSessionIds(rows, state.searchValue),
@@ -360,11 +418,13 @@ function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogStat
   return {
     projectTitle: state.projectTitle,
     projectDirectory: state.projectDirectory,
+    ...(state.initialModel !== undefined ? { initialModel: state.initialModel } : {}),
     worktrees: state.worktrees,
     worktreeIndex: state.worktreeIndex,
     modelProviders: state.modelProviders,
     modelProviderIndex: state.modelProviderIndex,
     modelIndex: state.modelIndex,
+    variantIndex: state.variantIndex,
     focus: state.focus,
     value: state.value,
     sending: state.sending,
@@ -374,9 +434,12 @@ function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogStat
 function omitPromptError(state: PromptDialogState): PromptDialogState {
   return {
     row: state.row,
+    modelProviders: state.modelProviders,
+    modelProviderIndex: state.modelProviderIndex,
+    modelIndex: state.modelIndex,
+    variantIndex: state.variantIndex,
+    focus: state.focus,
     value: state.value,
     sending: state.sending,
-    loadingPreview: state.loadingPreview,
-    loadingMorePreview: state.loadingMorePreview,
   }
 }
