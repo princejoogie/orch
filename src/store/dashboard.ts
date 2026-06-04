@@ -50,6 +50,8 @@ export type DashboardStore = {
   setAddSessionWorktreeIndex: (worktreeIndex: number) => void
   setAddSessionModelOptions: (
     projectDirectory: string,
+    modelDirectory: string,
+    workspaceID: string | undefined,
     modelProviders: AddSessionDialogState["modelProviders"],
     modelProviderIndex: number,
     modelIndex: number,
@@ -153,12 +155,35 @@ function createDashboardStore() {
           : undefined,
       })),
     setAddSessionWorktreeIndex: (worktreeIndex) =>
-      set((state) => ({
-        addSessionDialog: state.addSessionDialog ? { ...state.addSessionDialog, worktreeIndex } : undefined,
-      })),
-    setAddSessionModelOptions: (projectDirectory, modelProviders, modelProviderIndex, modelIndex, variantIndex) =>
+      set((state) => {
+        if (!state.addSessionDialog) return { addSessionDialog: undefined }
+        if (state.addSessionDialog.worktreeIndex === worktreeIndex) return state
+        return {
+          addSessionDialog: {
+            ...state.addSessionDialog,
+            worktreeIndex,
+            modelProviders: [],
+            modelProviderIndex: 0,
+            modelIndex: 0,
+            variantIndex: 0,
+          },
+        }
+      }),
+    setAddSessionModelOptions: (
+      projectDirectory,
+      modelDirectory,
+      workspaceID,
+      modelProviders,
+      modelProviderIndex,
+      modelIndex,
+      variantIndex,
+    ) =>
       set((state) => {
         if (!state.addSessionDialog || state.addSessionDialog.projectDirectory !== projectDirectory) return state
+        const selectedWorktree = state.addSessionDialog.worktrees[state.addSessionDialog.worktreeIndex]
+        const currentModelDirectory = selectedWorktree?.directory ?? state.addSessionDialog.projectDirectory
+        const currentWorkspaceID = selectedWorktree ? selectedWorktree.workspaceID : state.addSessionDialog.workspaceID
+        if (currentModelDirectory !== modelDirectory || currentWorkspaceID !== workspaceID) return state
         return {
           addSessionDialog: {
             ...state.addSessionDialog,
@@ -418,6 +443,7 @@ function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogStat
   return {
     projectTitle: state.projectTitle,
     projectDirectory: state.projectDirectory,
+    ...(state.workspaceID !== undefined ? { workspaceID: state.workspaceID } : {}),
     ...(state.initialModel !== undefined ? { initialModel: state.initialModel } : {}),
     worktrees: state.worktrees,
     worktreeIndex: state.worktreeIndex,

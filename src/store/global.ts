@@ -76,7 +76,11 @@ export const useGlobalStore = create<GlobalStore>((set, get) => ({
     set((state) => ({
       settingsPage: state.settingsPage ? { ...state.settingsPage, saving: false, error } : undefined,
     })),
-  syncSettingsFromConfig: (config) => set({ settingsPage: settingsStateFromConfig(config) }),
+  syncSettingsFromConfig: (config) =>
+    set((state) => ({
+      settingsPage: settingsStateFromConfig(config),
+      settingsClearVersion: state.settingsClearVersion + 1,
+    })),
   bumpSettingsClearVersion: () => set((state) => ({ settingsClearVersion: state.settingsClearVersion + 1 })),
   setShortcutsDialogOpen: (open) => set({ shortcutsDialogOpen: open }),
   setSelectedShortcutIndex: (index) => set({ selectedShortcutIndex: index }),

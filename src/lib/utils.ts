@@ -49,6 +49,7 @@ export type PromptDialogState = {
 export type WorktreeOption = {
   directory: string
   workspaceID?: string | undefined
+  primary?: boolean | undefined
   name: string
 }
 
@@ -69,6 +70,7 @@ export type ModelProviderOption = {
 export type AddSessionDialogState = {
   projectTitle: string
   projectDirectory: string
+  workspaceID?: string | undefined
   initialModel?: SessionRow["model"] | undefined
   worktrees: WorktreeOption[]
   worktreeIndex: number
@@ -128,7 +130,9 @@ export function formatAge(timestamp: number, now: Date): string {
   if (seconds < 60) return `${seconds}s`
   const minutes = Math.floor(seconds / 60)
   if (minutes < 60) return `${minutes}m`
-  return `${Math.floor(minutes / 60)}h`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 export function truncate(value: string, width: number): string {
@@ -256,7 +260,7 @@ export function projectTabs(projects: ProjectRow[], rowsByProjectId: Record<stri
         worktrees:
           project.worktrees.length > 0
             ? project.worktrees
-            : [{ directory: project.directory, name: project.worktreeName }],
+            : [{ directory: project.directory, name: project.worktreeName, primary: true }],
       }
     })
 }

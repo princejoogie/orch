@@ -59,7 +59,7 @@ Mouse wheel scrolling should remain scrollbox-owned unless a custom-scrolled mod
 
 ## Inputs
 
-Search uses OpenTUI `<input>` and prompt/new-session dialogs use `<textarea>`.
+Search uses OpenTUI `<input>` and prompt/new-session dialogs use `<textarea>`. Sidebar search is dashboard-only so settings page shortcuts stay active without competing with dashboard search focus.
 
 - Keep app shortcuts gated by `textInputActive`.
 - Textarea submit bindings are explicit: enter submits and shift-enter inserts a newline.

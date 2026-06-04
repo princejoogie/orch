@@ -1,3 +1,4 @@
+import { realpathSync } from "node:fs"
 import type {
   GlobalSession,
   Project as OpencodeProject,
@@ -82,7 +83,9 @@ export async function getProjectSessions(options: {
     },
     { throwOnError: true, ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   )
-  const projectSessions = sessions.data.filter((session) => session.projectID === options.project.id)
+  const projectSessions = sessions.data.filter(
+    (session) => session.projectID === options.project.id && isActiveSession(session),
+  )
   const [statuses, details] = await Promise.all([
     loadStatuses(projectSessions, serverUrl, options.signal),
     loadSessionDetails(projectSessions, serverUrl, options.signal),
@@ -106,6 +109,8 @@ type GitWorktree = {
   directory: string
   head?: string | undefined
   branch?: string | undefined
+  bare?: boolean | undefined
+  prunable?: boolean | undefined
 }
 
 async function loadProjectWorktrees(project: OpencodeProject): Promise<WorktreeRow[]> {
@@ -156,10 +161,12 @@ function parseGitWorktrees(output: string): GitWorktree[] {
 
     if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
     else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
+    else if (line === "bare") current.bare = true
+    else if (line.startsWith("prunable")) current.prunable = true
   }
 
   flush()
-  return worktrees.filter((worktree) => worktree.directory.length > 0)
+  return worktrees.filter((worktree) => worktree.directory.length > 0 && !worktree.bare && !worktree.prunable)
 }
 
 async function loadRecentProjectSessionUpdated(
@@ -174,7 +181,7 @@ async function loadRecentProjectSessionUpdated(
       { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
     )
     return sessions.data
-      .filter((session) => session.projectID === project.id)
+      .filter((session) => session.projectID === project.id && isActiveSession(session))
       .reduce<number | undefined>(
         (updated, session) => Math.max(updated ?? session.time.updated, session.time.updated),
         undefined,
@@ -188,13 +195,15 @@ async function loadRecentProjectSessionUpdated(
 
 function worktreeRows(primaryDirectory: string, worktrees: GitWorktree[]): WorktreeRow[] {
   const rows = new Map<string, WorktreeRow>()
-  const primary = worktrees.find((worktree) => worktree.directory === primaryDirectory)
+  const primary = worktrees.find((worktree) => sameDirectory(worktree.directory, primaryDirectory))
   rows.set(primaryDirectory, {
     directory: primaryDirectory,
     name: worktreeName(primary) ?? formatDirectory(primaryDirectory),
+    primary: true,
   })
 
   for (const worktree of worktrees) {
+    if (sameDirectory(worktree.directory, primaryDirectory)) continue
     if (rows.has(worktree.directory)) continue
     rows.set(worktree.directory, {
       directory: worktree.directory,
@@ -302,6 +311,10 @@ function routeKey(input: { directory: string; workspaceID?: string | undefined }
 
 type SessionLike = GlobalSession | OpencodeSession
 
+function isActiveSession(session: SessionLike): boolean {
+  return !session.time.archived
+}
+
 function toProjectRow(project: OpencodeProject, worktrees: WorktreeRow[], updated: number): ProjectRow {
   return {
     id: project.id,
@@ -357,6 +370,18 @@ function inferStatus(session: SessionLike, status?: OpencodeSessionStatus): Sess
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError"
+}
+
+function sameDirectory(left: string, right: string): boolean {
+  return canonicalDirectory(left) === canonicalDirectory(right)
+}
+
+function canonicalDirectory(directory: string): string {
+  try {
+    return realpathSync(directory)
+  } catch {
+    return directory.replace(/\/+$/, "")
+  }
 }
 
 export function formatDirectory(directory: string): string {

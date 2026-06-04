@@ -141,7 +141,13 @@ export function PromptDialog({ width, height }: { width: number; height: number 
   const inputHeight = 5
   const selectorFooterHeight = 1
   const labelHeight = 1
-  const historyHeight = clamp(height - (state.error ? 20 : 19), 8, 28)
+  const modelLoadError = modelProvidersQuery.error
+    ? errorMessage(modelProvidersQuery.error)
+    : defaultModelQuery.error
+      ? errorMessage(defaultModelQuery.error)
+      : undefined
+  const dialogError = state.error ?? modelLoadError
+  const historyHeight = clamp(height - (dialogError ? 24 : 23), 8, 24)
   const historyBlockHeight = historyHeight + 1
   const inputBlockHeight = inputHeight + 3 + selectorFooterHeight
   const modelProviderSelectorFocused = state.focus === "model-provider"
@@ -149,14 +155,9 @@ export function PromptDialog({ width, height }: { width: number; height: number 
   const variantSelectorFocused = state.focus === "variant"
   const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
   const selectorWidth = Math.max(1, dialogWidth - 4)
-  const bodyHeight = labelHeight + historyBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
+  const bodyHeight = labelHeight + historyBlockHeight + inputBlockHeight + (dialogError ? 1 : 0)
   const historyLineWidth = dialogWidth - 8
   const historyMessages = historyQuery.data ?? withoutQueuedMarkers(state.row.messages)
-  const modelLoadError = modelProvidersQuery.error
-    ? errorMessage(modelProvidersQuery.error)
-    : defaultModelQuery.error
-      ? errorMessage(defaultModelQuery.error)
-      : undefined
   const historyLines = historyQuery.isPending
     ? [{ key: "loading", text: "Loading messages..." }]
     : [
@@ -224,7 +225,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
         screenHeight={height}
         width={dialogWidth}
         height={dialogHeight}
-        danger={Boolean(state.error)}
+        danger={Boolean(dialogError)}
         title="Prompt session"
         headerRight={state.sending ? "sending" : undefined}
         subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
@@ -253,7 +254,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
                 label="Send"
                 shortcut="↵"
                 width={10}
-                disabled={state.sending || state.value.trim().length === 0 || !selectedModel}
+                disabled={state.sending || state.value.trim().length === 0}
                 onPress={() => void controller.submitPrompt(state.value)}
               />
               <ButtonSpacer />
@@ -316,7 +317,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           onInput={dashboardStore.setPromptValue}
           onSubmit={(value) => void controller.submitPrompt(value)}
         />
-        <DialogError error={state.error ?? modelLoadError} width={dialogWidth} />
+        <DialogError error={dialogError} width={dialogWidth} />
       </StandardDialogFrame>
       {modelSelectorActive && modelMenuItems.length > 0 ? (
         <MenuDropdown
@@ -441,25 +442,35 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const initialModelProviderID = state?.initialModel?.providerID
   const initialModelID = state?.initialModel?.modelID
   const initialModelVariant = state?.initialModel?.variant
+  const selectedWorktree = state?.worktrees[state.worktreeIndex]
+  const addModelDirectory = selectedWorktree?.directory ?? state?.projectDirectory
+  const addWorkspaceID = selectedWorktree ? selectedWorktree.workspaceID : state?.workspaceID
   const modelProvidersQuery = useQuery({
-    queryKey: ["opencode-dialog-model-providers", globalStore.config.activeServerUrl, state?.projectDirectory],
+    queryKey: [
+      "opencode-dialog-model-providers",
+      globalStore.config.activeServerUrl,
+      addModelDirectory,
+      addWorkspaceID,
+    ],
     queryFn: ({ signal }) => {
-      if (!state) return []
+      if (!state || !addModelDirectory) return []
       return loadModelProviders({
         serverUrl: globalStore.config.activeServerUrl,
-        directory: state.projectDirectory,
+        directory: addModelDirectory,
+        ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
         signal,
       })
     },
     enabled: state !== undefined,
   })
   const defaultModelQuery = useQuery({
-    queryKey: ["opencode-dialog-default-model", globalStore.config.activeServerUrl, state?.projectDirectory],
+    queryKey: ["opencode-dialog-default-model", globalStore.config.activeServerUrl, addModelDirectory, addWorkspaceID],
     queryFn: ({ signal }) => {
-      if (!state) return null
+      if (!state || !addModelDirectory) return null
       return loadDefaultModel({
         serverUrl: globalStore.config.activeServerUrl,
-        directory: state.projectDirectory,
+        directory: addModelDirectory,
+        ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
         signal,
       }).then((model) => model ?? null)
     },
@@ -467,7 +478,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   })
 
   useEffect(() => {
-    if (!addProjectDirectory || !modelProvidersQuery.data || defaultModelQuery.isPending) return
+    if (!addProjectDirectory || !addModelDirectory || !modelProvidersQuery.data || defaultModelQuery.isPending) return
     const initialModel =
       initialModelProviderID && initialModelID
         ? {
@@ -479,6 +490,8 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     const selection = modelSelectionForDefault(modelProvidersQuery.data, initialModel ?? defaultModelQuery.data)
     setAddSessionModelOptions(
       addProjectDirectory,
+      addModelDirectory,
+      addWorkspaceID,
       modelProvidersQuery.data,
       selection.modelProviderIndex,
       selection.modelIndex,
@@ -489,6 +502,8 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     defaultModelQuery.isPending,
     modelProvidersQuery.data,
     addProjectDirectory,
+    addModelDirectory,
+    addWorkspaceID,
     initialModelID,
     initialModelProviderID,
     initialModelVariant,
@@ -508,7 +523,13 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const variantSelectorFocused = state.focus === "variant"
   const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
   const selectorWidth = Math.max(1, dialogWidth - 4)
-  const bodyHeight = worktreeBlockHeight + inputBlockHeight + (state.error ? 1 : 0)
+  const modelLoadError = modelProvidersQuery.error
+    ? errorMessage(modelProvidersQuery.error)
+    : defaultModelQuery.error
+      ? errorMessage(defaultModelQuery.error)
+      : undefined
+  const dialogError = state.error ?? modelLoadError
+  const bodyHeight = worktreeBlockHeight + inputBlockHeight + (dialogError ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 6))
   const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
   const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
@@ -590,12 +611,6 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     0,
     Math.max(0, variantOptionCount - variantVisibleCount),
   )
-  const modelLoadError = modelProvidersQuery.error
-    ? errorMessage(modelProvidersQuery.error)
-    : defaultModelQuery.error
-      ? errorMessage(defaultModelQuery.error)
-      : undefined
-
   return (
     <>
       <StandardDialogFrame
@@ -603,7 +618,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         screenHeight={height}
         width={dialogWidth}
         height={dialogHeight}
-        danger={Boolean(state.error)}
+        danger={Boolean(dialogError)}
         title="New session"
         headerRight={state.sending ? "creating" : undefined}
         onClose={dashboardStore.closeAddSessionDialog}
@@ -635,7 +650,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
                 label="Create"
                 shortcut="↵"
                 width={12}
-                disabled={state.sending || state.value.trim().length === 0 || !selectedModel}
+                disabled={state.sending || state.value.trim().length === 0}
                 onPress={() => void controller.submitAddSession(state.value)}
               />
               <ButtonSpacer />
@@ -683,7 +698,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           onInput={dashboardStore.setAddSessionValue}
           onSubmit={(value) => void controller.submitAddSession(value)}
         />
-        <DialogError error={state.error ?? modelLoadError} width={dialogWidth} />
+        <DialogError error={dialogError} width={dialogWidth} />
       </StandardDialogFrame>
       {worktreeSelectorFocused && worktreeMenuItems.length > 0 ? (
         <MenuDropdown

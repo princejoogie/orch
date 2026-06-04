@@ -86,7 +86,6 @@ function useSettingsController(): SettingsController {
           : [...currentConfig.servers, { name: serverNameFromUrl(normalizedUrl), url: normalizedUrl }]
         const nextConfig = await persistConfig({ servers: nextServers, activeServerUrl: normalizedUrl })
         globalStoreRef.current.syncSettingsFromConfig(nextConfig)
-        globalStoreRef.current.bumpSettingsClearVersion()
       } catch (settingsError) {
         console.error("Failed to save server", settingsError)
         const detail = errorMessage(settingsError)

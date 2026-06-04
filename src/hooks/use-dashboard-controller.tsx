@@ -7,7 +7,7 @@ import { type MenuItem } from "../components/ui/menu-dropdown.tsx"
 import {
   DOUBLE_CLICK_MS,
   EMPTY_SESSION_ROWS,
-  POLL_INTERVAL_MS,
+  PROJECT_POLL_INTERVAL_MS,
   SELECTION_SCROLL_EDGE_OFFSET,
 } from "../config/constants.ts"
 import { loadOrchConfig } from "../config/orch.ts"
@@ -129,12 +129,19 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     () => projectTabs(projectSnapshot?.projects ?? [], dashboardStore.rowsByProjectId),
     [dashboardStore.rowsByProjectId, projectSnapshot?.projects],
   )
-  const activeTabIndex = dashboardStore.activeTabId
-    ? Math.max(
-        0,
-        tabs.findIndex((tab) => tab.id === dashboardStore.activeTabId),
-      )
-    : 0
+  const activeTabId = dashboardStore.activeTabId
+  const setActiveTabId = dashboardStore.setActiveTabId
+  const selectedTabIndex = activeTabId ? tabs.findIndex((tab) => tab.id === activeTabId) : -1
+  const activeTabIndex = selectedTabIndex === -1 ? 0 : selectedTabIndex
+  useEffect(() => {
+    const firstTabId = tabs[0]?.id
+    if (!firstTabId) {
+      if (activeTabId !== undefined) setActiveTabId(undefined)
+      return
+    }
+
+    if (selectedTabIndex === -1) setActiveTabId(firstTabId)
+  }, [activeTabId, selectedTabIndex, setActiveTabId, tabs])
   const activeTab = tabs[activeTabIndex]
   const activeTabKey = activeTab?.id
   const activeTabRowsLoaded = activeTabKey !== undefined && Object.hasOwn(dashboardStore.rowsByProjectId, activeTabKey)
@@ -156,9 +163,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     [dashboardStore.selectedSessionIds, filteredRows],
   )
   const rowsToDelete = selectedRows.length > 0 ? selectedRows : currentRow ? [currentRow] : []
-  const rowsToInterrupt = (selectedRows.length > 0 ? selectedRows : currentRow ? [currentRow] : []).filter(
-    (row) => row.status === "working",
-  )
+  const selectedRowsToInterrupt = selectedRows.filter((row) => row.status === "working")
+  const rowsToInterrupt =
+    selectedRowsToInterrupt.length > 0 ? selectedRowsToInterrupt : currentRow?.status === "working" ? [currentRow] : []
   const statusLineCount =
     (projectsQuery.isPending || dashboardStore.sessionListState.pending ? 1 : 0) +
     (projectQueryError || dashboardStore.sessionListState.error ? 1 : 0) +
@@ -496,7 +503,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   useScrollFollowSelected(listRef, selectedLine, SELECTION_SCROLL_EDGE_OFFSET)
 
   useEffect(() => {
-    const interval = setInterval(() => void refetchProjects(), POLL_INTERVAL_MS)
+    const interval = setInterval(() => void refetchProjects(), PROJECT_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [refetchProjects])
 
@@ -581,17 +588,35 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
   function openAddSessionDialog() {
     if (!activeTab) return
-    const worktrees = worktreeOptions(activeTab)
+    let worktrees = worktreeOptions(activeTab)
+    if (currentRow && currentRow.workspaceID !== undefined) {
+      const workspaceID = currentRow.workspaceID
+      const selectedIndex = worktrees.findIndex((worktree) => worktree.directory === currentRow.directory)
+      const selectedWorktree = {
+        directory: currentRow.directory,
+        workspaceID,
+        name: currentRow.worktreeName,
+        ...(selectedIndex !== -1 && worktrees[selectedIndex]?.primary ? { primary: true } : {}),
+      }
+      worktrees =
+        selectedIndex === -1
+          ? [selectedWorktree, ...worktrees]
+          : worktrees.map((worktree, index) => (index === selectedIndex ? selectedWorktree : worktree))
+    }
     if (worktrees.length === 0) return
     const initialWorktreeIndex = currentRow
       ? Math.max(
           0,
-          worktrees.findIndex((worktree) => worktree.directory === currentRow.directory),
+          worktrees.findIndex(
+            (worktree) =>
+              worktree.directory === currentRow.directory && worktree.workspaceID === currentRow.workspaceID,
+          ),
         )
       : 0
     dashboardStore.openAddSessionDialog({
       projectTitle: activeTab.title,
       projectDirectory: activeTab.directory,
+      ...(currentRow?.workspaceID !== undefined ? { workspaceID: currentRow.workspaceID } : {}),
       ...(currentRow?.model !== undefined ? { initialModel: currentRow.model } : {}),
       worktrees,
       worktreeIndex: initialWorktreeIndex,
@@ -784,6 +809,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         openSettingsPage()
         return true
       case "focus-search":
+        if (globalStore.page !== "dashboard") return false
         dashboardStore.setSearchFocused(true)
         return true
       case "open-help":
@@ -840,36 +866,43 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
   async function submitAddSession(value: string) {
     const trimmed = value.trim()
-    if (!trimmed || !dashboardStore.addSessionDialog || dashboardStore.addSessionDialog.sending) return
+    const dialog = dashboardStore.addSessionDialog
+    if (!trimmed || !dialog || dialog.sending) return
 
-    let worktree = dashboardStore.addSessionDialog.worktrees[dashboardStore.addSessionDialog.worktreeIndex]
-    const modelProvider =
-      dashboardStore.addSessionDialog.modelProviders[dashboardStore.addSessionDialog.modelProviderIndex]
-    const model = modelProvider?.models[dashboardStore.addSessionDialog.modelIndex]
-    const variant = variantOptions(model)[dashboardStore.addSessionDialog.variantIndex]
-
-    if (!model) {
-      dashboardStore.setAddSessionError("Select a model.")
-      return
-    }
+    let worktree = dialog.worktrees[dialog.worktreeIndex]
+    const workspaceID = worktree ? worktree.workspaceID : dialog.workspaceID
+    const modelProvider = dialog.modelProviders[dialog.modelProviderIndex]
+    const model = modelProvider?.models[dialog.modelIndex]
+    const variant = variantOptions(model)[dialog.variantIndex]
+    const selectedModel = model
+      ? { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) }
+      : undefined
 
     dashboardStore.setAddSessionSending()
     try {
-      if (!worktree && activeTab) {
+      if (!worktree) {
         const created = await createWorktree({
-          directory: activeTab.directory,
+          directory: dialog.projectDirectory,
+          ...(workspaceID !== undefined ? { workspaceID } : {}),
           serverUrl: globalStore.config.activeServerUrl,
         })
-        worktree = { directory: created.directory, name: created.name }
+        worktree = {
+          directory: created.directory,
+          name: created.name,
+          ...(workspaceID !== undefined ? { workspaceID } : {}),
+        }
         dashboardStore.addAddSessionWorktree(worktree)
       }
 
-      if (!worktree) return
+      if (!worktree) {
+        dashboardStore.setAddSessionError("Select a worktree.")
+        return
+      }
 
       await createSessionWithPrompt({
         directory: worktree.directory,
         workspaceID: worktree.workspaceID,
-        model: { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) },
+        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
         text: trimmed,
         serverUrl: globalStore.config.activeServerUrl,
       })
@@ -887,14 +920,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     const dialog = dashboardStore.addSessionDialog
     if (!dialog || dialog.sending) return false
     const worktree = dialog.worktrees[dialog.worktreeIndex]
-    return Boolean(worktree && worktree.directory !== dialog.projectDirectory)
+    return Boolean(worktree && !worktree.primary)
   }
 
   function openDeleteSelectedAddSessionWorktreeDialog() {
     const dialog = dashboardStore.addSessionDialog
     if (!dialog || dialog.sending) return
     const worktree = dialog.worktrees[dialog.worktreeIndex]
-    if (!worktree || worktree.directory === dialog.projectDirectory) return
+    if (!worktree || worktree.primary) return
 
     dashboardStore.openDeleteWorktreeDialog({ projectDirectory: dialog.projectDirectory, worktree })
   }
@@ -916,6 +949,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         await removeWorktree({
           projectDirectory: dialog.projectDirectory,
           worktreeDirectory: dialog.worktree.directory,
+          ...(dialog.worktree.workspaceID !== undefined ? { workspaceID: dialog.worktree.workspaceID } : {}),
           serverUrl: globalStore.config.activeServerUrl,
         })
         dashboardStore.removeAddSessionWorktree(dialog.worktree.directory)
@@ -938,11 +972,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     const modelProvider = dashboardStore.promptDialog.modelProviders[dashboardStore.promptDialog.modelProviderIndex]
     const model = modelProvider?.models[dashboardStore.promptDialog.modelIndex]
     const variant = variantOptions(model)[dashboardStore.promptDialog.variantIndex]
-
-    if (!model) {
-      dashboardStore.setPromptError("Select a model.")
-      return
-    }
+    const selectedModel = model
+      ? { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) }
+      : undefined
 
     dashboardStore.setPromptSending()
     try {
@@ -950,7 +982,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         sessionID: row.id,
         directory: row.directory,
         workspaceID: row.workspaceID,
-        model: { providerID: model.providerID, modelID: model.modelID, ...(variant !== undefined ? { variant } : {}) },
+        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
         text: trimmed,
         serverUrl: globalStore.config.activeServerUrl,
       })

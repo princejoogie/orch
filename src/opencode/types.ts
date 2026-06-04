@@ -35,6 +35,7 @@ export type SessionRow = {
 export type WorktreeRow = {
   directory: string
   name: string
+  primary?: boolean | undefined
 }
 
 export type ProjectRow = {

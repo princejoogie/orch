@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  formatAge,
   moveSelection,
   moveSelectionClamped,
   normalizeSelection,
@@ -29,6 +30,22 @@ const rowsBySection: Record<LaneStatus, SessionRow[]> = {
   "needs-input": [row("n1", "completed")],
   completed: [row("c1", "completed"), row("c2", "completed")],
 }
+
+describe("formatAge", () => {
+  const now = new Date(2 * 24 * 60 * 60 * 1000)
+
+  test("formats sub-day ages with seconds, minutes, and hours", () => {
+    expect(formatAge(now.getTime() - 12 * 1000, now)).toBe("12s")
+    expect(formatAge(now.getTime() - 12 * 60 * 1000, now)).toBe("12m")
+    expect(formatAge(now.getTime() - 12 * 60 * 60 * 1000, now)).toBe("12h")
+  })
+
+  test("formats ages of at least one day with d suffix", () => {
+    expect(formatAge(now.getTime() - 24 * 60 * 60 * 1000, now)).toBe("1d")
+    expect(formatAge(now.getTime() - 47 * 60 * 60 * 1000, now)).toBe("1d")
+    expect(formatAge(now.getTime() - 48 * 60 * 60 * 1000, now)).toBe("2d")
+  })
+})
 
 describe("selection movement", () => {
   test("moveSelection wraps around list edges", () => {
