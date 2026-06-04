@@ -13,7 +13,7 @@ import {
 import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
 import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { clamp, wrapText, type WorktreeOption } from "../lib/utils.ts"
+import { clamp, wrapText, type ModelProviderOption, type WorktreeOption } from "../lib/utils.ts"
 import type { SessionHistoryMessage } from "../opencode.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
@@ -114,12 +114,18 @@ function promptHistoryLines(messages: SessionHistoryMessage[], width: number) {
   if (messages.length === 0) return [{ key: "empty", text: "No previous messages." }]
 
   return messages.flatMap((message, index) => {
-    const label = message.role === "user" ? "User" : "Assistant"
-    const lines = wrapText(message.text, Math.max(1, width - label.length - 2), Number.MAX_SAFE_INTEGER)
-    return lines.map((line, lineIndex) => ({
+    const lines = wrapText(message.text, Math.max(1, width), Number.MAX_SAFE_INTEGER).map((line) => ({
       key: `${index}:${line.key}`,
-      text: lineIndex === 0 ? `${label}: ${line.text}` : `${" ".repeat(label.length + 2)}${line.text}`,
+      text: line.text,
     }))
+    const previousMessage = messages[index - 1]
+    const showRole = !previousMessage || previousMessage.role !== message.role
+    const roleLine = showRole
+      ? [{ key: `${index}:role`, text: `● ${message.role === "user" ? "User" : "Assistant"}:` }]
+      : []
+    const spacerLine = index < messages.length - 1 ? [{ key: `${index}:spacer`, text: " " }] : []
+
+    return [...roleLine, ...lines, ...spacerLine]
   })
 }
 
@@ -133,14 +139,19 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
   const inputBlockHeight = inputHeight + 3
-  const selectorFocused = state.focus === "worktree"
+  const worktreeSelectorFocused = state.focus === "worktree"
+  const modelProviderSelectorFocused = state.focus === "model-provider"
+  const modelSelectorFocused = state.focus === "model"
+  const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
   const selectorWidth = Math.max(1, dialogWidth - 4)
-  const bodyHeight = 2 + inputBlockHeight + (state.error ? 1 : 0)
+  const bodyHeight = 3 + inputBlockHeight + (state.error ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 6))
   const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
   const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
   const worktreeSelectorLeft = dialogLeft + 2
   const worktreeSelectorTop = dialogTop + 3
+  const modelSelectorLeft = dialogLeft + 2
+  const modelSelectorTop = dialogTop + 4
   const worktreeOptionCount = state.worktrees.length + 1
   const selectedDisplayWorktreeIndex = toDisplayWorktreeIndex(state.worktreeIndex, state.worktrees.length)
   const worktreeVisibleCount = Math.min(worktreeOptionCount, 6)
@@ -167,6 +178,35 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
       },
     })),
   ]
+  const selectedProvider = state.modelProviders[state.modelProviderIndex]
+  const selectedModel = selectedProvider?.models[state.modelIndex]
+  const modelMenuItems: MenuItem[] = modelProviderSelectorFocused
+    ? state.modelProviders.map((provider, index) => ({
+        label: provider.name,
+        shortcut: "",
+        run: () => {
+          dashboardStore.setAddSessionModelProviderIndex(index)
+          dashboardStore.setAddSessionFocus("model")
+        },
+      }))
+    : (selectedProvider?.models.map((model, index) => ({
+        label: model.name,
+        shortcut: "",
+        run: () => {
+          dashboardStore.setAddSessionModelIndex(index)
+          dashboardStore.setAddSessionFocus("input")
+        },
+      })) ?? [])
+  const modelOptionCount = modelProviderSelectorFocused
+    ? state.modelProviders.length
+    : (selectedProvider?.models.length ?? 0)
+  const selectedModelMenuIndex = modelProviderSelectorFocused ? state.modelProviderIndex : state.modelIndex
+  const modelVisibleCount = Math.min(modelOptionCount, 6)
+  const modelVisibleStart = clamp(
+    selectedModelMenuIndex - modelVisibleCount + 1,
+    0,
+    Math.max(0, modelOptionCount - modelVisibleCount),
+  )
 
   return (
     <>
@@ -187,7 +227,12 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
               <HintRow
                 items={[
                   { key: "tab", label: "focus" },
-                  { key: "j/k", label: "worktree", when: selectorFocused, disabled: worktreeOptionCount <= 1 },
+                  {
+                    key: "j/k",
+                    label: worktreeSelectorFocused ? "worktree" : "model",
+                    when: worktreeSelectorFocused || modelSelectorActive,
+                    disabled: worktreeSelectorFocused ? worktreeOptionCount <= 1 : modelOptionCount <= 1,
+                  },
                   { key: "shift-enter", label: "newline" },
                 ]}
               />
@@ -198,7 +243,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
                 label="Create"
                 shortcut="↵"
                 width={12}
-                disabled={state.sending || state.value.trim().length === 0}
+                disabled={state.sending || state.value.trim().length === 0 || !selectedModel}
                 onPress={() => void controller.submitAddSession(state.value)}
               />
               <ButtonSpacer />
@@ -211,8 +256,17 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           width={selectorWidth}
           worktrees={state.worktrees}
           selectedIndex={state.worktreeIndex}
-          focused={selectorFocused}
+          focused={worktreeSelectorFocused}
+          marginBottom={0}
           onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
+        />
+        <ModelSelector
+          width={selectorWidth}
+          providers={state.modelProviders}
+          selectedProviderIndex={state.modelProviderIndex}
+          selectedModelIndex={state.modelIndex}
+          focused={modelSelectorActive}
+          onFocus={() => dashboardStore.setAddSessionFocus("model-provider")}
         />
         <DialogTextarea
           value={state.value}
@@ -225,7 +279,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         />
         <DialogError error={state.error} width={dialogWidth} />
       </StandardDialogFrame>
-      {selectorFocused && worktreeMenuItems.length > 0 ? (
+      {worktreeSelectorFocused && worktreeMenuItems.length > 0 ? (
         <MenuDropdown
           left={worktreeSelectorLeft}
           top={worktreeSelectorTop + 1}
@@ -241,6 +295,23 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           onClose={() => {}}
         />
       ) : null}
+      {modelSelectorActive && modelMenuItems.length > 0 ? (
+        <MenuDropdown
+          left={modelSelectorLeft}
+          top={modelSelectorTop + 1}
+          items={modelMenuItems}
+          selectedIndex={selectedModelMenuIndex}
+          visibleStart={modelVisibleStart}
+          visibleCount={modelVisibleCount}
+          maxWidth={selectorWidth}
+          showShortcuts={false}
+          onSelect={(index) => {
+            if (modelProviderSelectorFocused) dashboardStore.setAddSessionModelProviderIndex(index)
+            else dashboardStore.setAddSessionModelIndex(index)
+          }}
+          onClose={() => {}}
+        />
+      ) : null}
     </>
   )
 }
@@ -250,18 +321,62 @@ function WorktreeSelector({
   worktrees,
   selectedIndex,
   focused,
+  marginBottom = 1,
   onFocus,
 }: {
   width: number
   worktrees: WorktreeOption[]
   selectedIndex: number
   focused: boolean
+  marginBottom?: number | undefined
   onFocus: () => void
 }) {
   const selected = worktrees[selectedIndex]
   const fieldWidth = Math.max(1, width)
   const selectedName = selected?.name ?? "New worktree"
   const content = `Worktree: ${selectedName}`
+
+  return (
+    <box
+      style={{
+        height: 1,
+        width,
+        marginBottom,
+      }}
+      onMouseDown={(event) => {
+        mouseAction(event)
+        onFocus()
+      }}
+    >
+      <TextLine width={fieldWidth} bg={focused ? theme.backgroundElement : undefined}>
+        <span fg={selected ? theme.text : theme.textMuted} {...(focused ? { attributes: TextAttributes.BOLD } : {})}>
+          {fitCell(content, fieldWidth)}
+        </span>
+      </TextLine>
+    </box>
+  )
+}
+
+function ModelSelector({
+  width,
+  providers,
+  selectedProviderIndex,
+  selectedModelIndex,
+  focused,
+  onFocus,
+}: {
+  width: number
+  providers: ModelProviderOption[]
+  selectedProviderIndex: number
+  selectedModelIndex: number
+  focused: boolean
+  onFocus: () => void
+}) {
+  const selectedProvider = providers[selectedProviderIndex]
+  const selected = selectedProvider?.models[selectedModelIndex]
+  const fieldWidth = Math.max(1, width)
+  const selectedName = selected?.name ?? "No model"
+  const content = `Model: ${selectedName}`
 
   return (
     <box

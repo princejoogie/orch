@@ -30,6 +30,7 @@ export type LatestMessages = {
 export async function sendPrompt(input: {
   sessionID: string
   text: string
+  model?: { providerID: string; modelID: string } | undefined
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
@@ -38,6 +39,7 @@ export async function sendPrompt(input: {
     {
       sessionID: input.sessionID,
       ...routeOptions(input),
+      ...(input.model !== undefined ? { model: input.model } : {}),
       parts: [{ type: "text", text: input.text }],
     },
     { throwOnError: true },
@@ -47,6 +49,7 @@ export async function sendPrompt(input: {
 export async function createSessionWithPrompt(input: {
   text: string
   directory: string
+  model?: { providerID: string; modelID: string } | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
 }): Promise<string> {
@@ -60,6 +63,7 @@ export async function createSessionWithPrompt(input: {
     sessionID: session.data.id,
     directory: input.directory,
     text: input.text,
+    ...(input.model !== undefined ? { model: input.model } : {}),
     ...(input.workspaceID !== undefined ? { workspaceID: input.workspaceID } : {}),
     ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
   })
@@ -78,6 +82,47 @@ export async function createWorktree(input: {
   )
 
   return { directory: worktree.data.directory, name: worktree.data.name }
+}
+
+export type ModelOption = {
+  providerID: string
+  providerName: string
+  modelID: string
+  name: string
+}
+
+export type ModelProviderOption = {
+  id: string
+  name: string
+  models: ModelOption[]
+}
+
+export async function loadModelProviders(input: {
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
+}): Promise<ModelProviderOption[]> {
+  const result = await opencodeClient(input.serverUrl).config.providers(routeOptions(input), {
+    throwOnError: true,
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+  })
+
+  return result.data.providers
+    .map((provider: Provider) => {
+      const providerName = provider.name ?? provider.id
+      return {
+        id: provider.id,
+        name: providerName,
+        models: Object.entries(provider.models).map(([modelID, model]) => ({
+          providerID: provider.id,
+          providerName,
+          modelID,
+          name: model.name ?? modelID,
+        })),
+      }
+    })
+    .filter((provider) => provider.models.length > 0)
 }
 
 export async function removeWorktree(input: {
