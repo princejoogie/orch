@@ -515,7 +515,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const dialogWidth = Math.min(Math.max(56, Math.floor(width * 0.7)), 80, width - 4)
   const inputHeight = 5
   const selectorFooterHeight = 1
-  const inputBlockHeight = inputHeight + 3 + selectorFooterHeight
+  const inputBlockHeight = inputHeight + 2 + selectorFooterHeight
   const worktreeBlockHeight = 1
   const worktreeSelectorFocused = state.focus === "worktree"
   const modelProviderSelectorFocused = state.focus === "model-provider"
@@ -534,9 +534,9 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
   const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
   const worktreeSelectorLeft = dialogLeft + 2
-  const worktreeSelectorTop = dialogTop + 3
+  const worktreeSelectorTop = dialogTop + 3 + inputBlockHeight
   const modelSelectorLeft = dialogLeft + 2
-  const modelSelectorTop = dialogTop + 3 + worktreeBlockHeight + 1 + inputHeight
+  const modelSelectorTop = dialogTop + 3 + 1 + inputHeight
   const variantSelectorLeft = dialogLeft + 2
   const variantSelectorTop = modelSelectorTop
   const worktreeOptionCount = state.worktrees.length + 1
@@ -659,14 +659,6 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           </DialogFooterActions>
         }
       >
-        <WorktreeSelector
-          width={selectorWidth}
-          worktrees={state.worktrees}
-          selectedIndex={state.worktreeIndex}
-          focused={worktreeSelectorFocused}
-          marginBottom={0}
-          onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
-        />
         <DialogTextarea
           value={state.value}
           placeholder={state.sending ? "Creating..." : "Type first prompt"}
@@ -693,10 +685,19 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
             />
           }
           footerHeight={selectorFooterHeight}
+          marginBottom={0}
           clearVersion={dashboardStore.addSessionClearVersion}
           onFocus={() => dashboardStore.setAddSessionFocus("input")}
           onInput={dashboardStore.setAddSessionValue}
           onSubmit={(value) => void controller.submitAddSession(value)}
+        />
+        <WorktreeSelector
+          width={selectorWidth}
+          worktrees={state.worktrees}
+          selectedIndex={state.worktreeIndex}
+          focused={worktreeSelectorFocused}
+          marginBottom={0}
+          onFocus={() => dashboardStore.setAddSessionFocus("worktree")}
         />
         <DialogError error={dialogError} width={dialogWidth} />
       </StandardDialogFrame>

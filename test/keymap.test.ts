@@ -237,7 +237,7 @@ describe("keymap dispatcher", () => {
     expect(interrupted).toBe(true)
   })
 
-  test("add session dialog tabs between input, worktree, model, and variant selectors", () => {
+  test("add session dialog tabs between input, model, variant, and worktree selectors", () => {
     const focus: { current: "input" | "worktree" | "model-provider" | "model" | "variant" } = { current: "input" }
     const moves: string[] = []
     let openedDeleteWorktree = false
@@ -255,7 +255,7 @@ describe("keymap dispatcher", () => {
           closed = true
         },
         moveFocus: (delta) => {
-          const order = ["input", "worktree", "model-provider", "variant"] as const
+          const order = ["input", "model-provider", "variant", "worktree"] as const
           const currentIndex =
             focus.current === "model" ? order.indexOf("model-provider") : order.indexOf(focus.current)
           focus.current = order[(currentIndex + delta + order.length) % order.length] ?? "input"
@@ -284,17 +284,6 @@ describe("keymap dispatcher", () => {
 
     expect(dispatcher.dispatch(parseKey("j")).kind).toBe("no-match")
     expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
-    expect(focus.current).toBe("worktree")
-    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
-    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
-    expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
-    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("pending")
-    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("ran")
-    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
-    expect(focus.current).toBe("input")
-    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
-    expect(focus.current).toBe("worktree")
-    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
     expect(focus.current).toBe("model-provider")
     expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
@@ -305,18 +294,31 @@ describe("keymap dispatcher", () => {
     expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
     expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
     expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("model-provider")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("variant")
+    expect(dispatcher.dispatch(parseKey("tab")).kind).toBe("ran")
+    expect(focus.current).toBe("worktree")
+    expect(dispatcher.dispatch(parseKey("j")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("down")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("k")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("pending")
+    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(focus.current).toBe("input")
+    expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
+    expect(focus.current).toBe("worktree")
     expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
     expect(focus.current).toBe("variant")
     expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
     expect(focus.current).toBe("model-provider")
     expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
-    expect(focus.current).toBe("worktree")
-    expect(dispatcher.dispatch(parseKey("shift+tab")).kind).toBe("ran")
     expect(focus.current).toBe("input")
     expect(dispatcher.dispatch(parseKey("k")).kind).toBe("no-match")
     expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
 
-    expect(moves).toEqual(["worktree:1", "worktree:1", "worktree:-1", "model:1", "model:1", "model:1"])
+    expect(moves).toEqual(["model:1", "model:1", "model:1", "worktree:1", "worktree:1", "worktree:-1"])
     expect(openedDeleteWorktree).toBe(true)
     expect(closed).toBe(true)
   })

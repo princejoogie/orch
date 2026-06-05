@@ -474,6 +474,7 @@ export function DialogTextarea({
   height,
   footer,
   footerHeight = 0,
+  marginBottom = 1,
   clearVersion,
   onFocus,
   onInput,
@@ -485,6 +486,7 @@ export function DialogTextarea({
   height: number
   footer?: ReactNode | undefined
   footerHeight?: number | undefined
+  marginBottom?: number | undefined
   clearVersion: number
   onFocus?: (() => void) | undefined
   onInput: (value: string) => void
@@ -513,7 +515,7 @@ export function DialogTextarea({
         borderColor: DIALOG_FIELD_BORDER,
         paddingLeft: 1,
         paddingRight: 1,
-        marginBottom: 1,
+        marginBottom,
       }}
     >
       <box style={{ height, width: "100%" }} {...focusMouseProps}>

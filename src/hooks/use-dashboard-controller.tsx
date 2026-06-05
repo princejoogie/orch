@@ -1135,7 +1135,7 @@ function halfPage(height: number): number {
 }
 
 function nextAddSessionFocus(focus: "input" | "worktree" | "model-provider" | "model" | "variant", delta: -1 | 1) {
-  const order = ["input", "worktree", "model-provider", "variant"] as const
+  const order = ["input", "model-provider", "variant", "worktree"] as const
   const currentIndex = focus === "model" ? order.indexOf("model-provider") : order.indexOf(focus)
   return order[(currentIndex + delta + order.length) % order.length] ?? "input"
 }
