@@ -6,7 +6,7 @@ Dialogs use a drawn frame and a small set of reusable primitives in `src/compone
 
 - `src/components/ui/dialog.tsx`: shared frame, text rows, dividers, hint rows, textarea, and generic dialog primitives.
 - `src/components/app-dialogs.tsx`: shell overlay component that renders all app dialogs with only screen dimensions from the shell.
-- `src/components/session-dialogs.tsx`: session workflow dialogs: prompt, add session, delete worktree, delete session, interrupt session.
+- `src/components/session-dialogs.tsx`: session workflow dialogs: permission, prompt, add session, delete worktree, delete session, interrupt session.
 - `src/components/shortcuts.ts`: keyboard shortcut/help metadata and command action identifiers.
 - `src/components/shortcuts-dialog.tsx`: keyboard shortcut/help dialog rendering.
 
@@ -86,6 +86,8 @@ Dialog options, action rows, and close controls can be clickable.
 - `ModalFrame` absorbs inside clicks so borders and blank dialog space do not trigger outside-click dismissal.
 
 ## Textareas
+
+When a selected session has pending opencode permission requests, the prompt action opens the permission dialog first. The prompt-session dialog is only opened after the user replies to the permission request with allow once, allow always, or deny. Cancelling the permission dialog returns to the dashboard without opening the prompt.
 
 Prompt textareas use explicit key bindings:
 

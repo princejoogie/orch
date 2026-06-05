@@ -1,4 +1,10 @@
-import { formatDirectory, type ProjectRow, type SessionRow, type SessionStatus } from "../opencode.ts"
+import {
+  formatDirectory,
+  type ProjectRow,
+  type SessionPermissionRequest,
+  type SessionRow,
+  type SessionStatus,
+} from "../opencode.ts"
 import { theme } from "../theme.ts"
 
 export { formatDirectory }
@@ -43,6 +49,13 @@ export type PromptDialogState = {
   focus: "input" | "model-provider" | "model" | "variant"
   value: string
   sending: boolean
+  error?: string | undefined
+}
+
+export type PermissionDialogState = {
+  row: SessionRow
+  request: SessionPermissionRequest
+  responding?: boolean | undefined
   error?: string | undefined
 }
 
@@ -216,6 +229,7 @@ export function nextIndex(current: number, delta: number, length: number): numbe
 }
 
 export function isNeedsInput(row: SessionRow, now: Date | number): boolean {
+  if (row.pendingPermissionRequests.length > 0) return true
   const timestamp = now instanceof Date ? now.getTime() : now
   return row.status === "completed" && timestamp - row.updated < NEEDS_INPUT_WINDOW_MS
 }
@@ -238,6 +252,7 @@ export function countLane(rows: SessionRow[], status: LaneStatus, now: Date | nu
 
 export function rowInLane(row: SessionRow, status: LaneStatus, now: Date | number): boolean {
   if (status === "needs-input") return isNeedsInput(row, now)
+  if (isNeedsInput(row, now)) return false
   if (status === "completed") return row.status === "completed" && !isNeedsInput(row, now)
   return row.status === status
 }

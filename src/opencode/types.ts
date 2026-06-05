@@ -5,6 +5,21 @@ export type SessionHistoryMessage = {
   role: "user" | "assistant"
   text: string
   queued?: boolean | undefined
+  permissionRequested?: boolean | undefined
+}
+
+export type SessionPermissionRequest = {
+  id: string
+  sessionID: string
+  permission: string
+  patterns: string[]
+  summary: string
+  tool?:
+    | {
+        messageID: string
+        callID: string
+      }
+    | undefined
 }
 
 export type SessionModel = {
@@ -20,6 +35,7 @@ export type SessionRow = {
   latestUserMessage: string
   messages: SessionHistoryMessage[]
   hasMoreMessages: boolean
+  pendingPermissionRequests: SessionPermissionRequest[]
   contextTokens?: number | undefined
   contextPercent?: number | undefined
   directory: string

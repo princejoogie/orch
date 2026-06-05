@@ -3,12 +3,13 @@ import {
   type Agent,
   type AssistantMessage,
   type Part,
+  type PermissionRequest,
   type Provider,
   type SessionMessage,
   type SessionMessagesResponse,
 } from "@opencode-ai/sdk/v2"
 import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerUrl } from "../config/orch.ts"
-import type { SessionHistoryMessage } from "./types.ts"
+import type { SessionHistoryMessage, SessionPermissionRequest } from "./types.ts"
 
 export const DEFAULT_LIMIT = 100
 export const LATEST_MESSAGES_LIMIT = 20
@@ -262,6 +263,7 @@ export async function loadLatestMessages(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   limit?: number | undefined
+  pendingPermissionRequests?: SessionPermissionRequest[] | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
 }): Promise<LatestMessages> {
@@ -275,25 +277,76 @@ export async function loadLatestMessages(input: {
     { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
   )
 
-  return extractLatestMessages(result.data, limit)
+  return extractLatestMessages(result.data, limit, input.pendingPermissionRequests ?? [])
 }
 
 export async function loadSessionHistory(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
+  pendingPermissionRequests?: SessionPermissionRequest[] | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
 }): Promise<SessionHistoryMessage[]> {
-  const result = await opencodeClient(input.serverUrl).session.messages(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-    },
-    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-  )
+  const client = opencodeClient(input.serverUrl)
+  const [result, pendingPermissionRequests] = await Promise.all([
+    client.session.messages(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+      },
+      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
+    ),
+    input.pendingPermissionRequests !== undefined
+      ? Promise.resolve(input.pendingPermissionRequests)
+      : loadPendingPermissions({
+          sessionID: input.sessionID,
+          directory: input.directory,
+          workspaceID: input.workspaceID,
+          serverUrl: input.serverUrl,
+          signal: input.signal,
+        }).catch((permissionError): SessionPermissionRequest[] => {
+          if (isAbortError(permissionError)) throw permissionError
+          console.error("Failed to load pending permission requests", permissionError)
+          return []
+        }),
+  ])
 
-  return extractHistoryMessages(result.data)
+  return extractHistoryMessages(result.data, pendingPermissionRequests)
+}
+
+export async function loadPendingPermissions(input: {
+  sessionID?: string | undefined
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+  signal?: AbortSignal | undefined
+}): Promise<SessionPermissionRequest[]> {
+  const result = await opencodeClient(input.serverUrl).permission.list(routeOptions(input), {
+    throwOnError: true,
+    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+  })
+  const requests = result.data.map(toSessionPermissionRequest)
+  return input.sessionID === undefined ? requests : requests.filter((request) => request.sessionID === input.sessionID)
+}
+
+export async function replyPermissionRequest(input: {
+  requestID: string
+  reply: "once" | "always" | "reject"
+  message?: string | undefined
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  serverUrl?: string | undefined
+}): Promise<void> {
+  await opencodeClient(input.serverUrl).permission.reply(
+    {
+      requestID: input.requestID,
+      reply: input.reply,
+      ...routeOptions(input),
+      ...(input.message !== undefined ? { message: input.message } : {}),
+    },
+    { throwOnError: true },
+  )
 }
 
 export async function loadContextUsage(input: {
@@ -337,11 +390,16 @@ export async function loadContextUsage(input: {
   return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
 }
 
-function extractLatestMessages(messages: SessionMessagesResponse, limit: number): LatestMessages {
+function extractLatestMessages(
+  messages: SessionMessagesResponse,
+  limit: number,
+  pendingPermissionRequests: SessionPermissionRequest[],
+): LatestMessages {
   let userMessage = ""
   let assistantMessage = ""
   let assistantInfo: AssistantMessage | undefined
-  const history = extractHistoryMessages(messages)
+  const history = extractHistoryMessages(messages, pendingPermissionRequests)
+  const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
 
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index]
@@ -357,35 +415,88 @@ function extractLatestMessages(messages: SessionMessagesResponse, limit: number)
 
   return {
     userMessage,
-    assistantMessage,
+    assistantMessage: permissionMessage || assistantMessage,
     messages: history,
     hasMore: messages.length >= limit,
     ...(assistantInfo !== undefined ? { assistantInfo } : {}),
   }
 }
 
-function extractHistoryMessages(messages: SessionMessagesResponse): SessionHistoryMessage[] {
+function extractHistoryMessages(
+  messages: SessionMessagesResponse,
+  pendingPermissionRequests: SessionPermissionRequest[] = [],
+): SessionHistoryMessage[] {
   const answeredUserIds = new Set<string>()
   for (const message of messages) {
     if (message.info.role === "assistant" && message.info.parentID) answeredUserIds.add(message.info.parentID)
   }
   const history: SessionHistoryMessage[] = []
+  const appendedPermissionIds = new Set<string>()
+  const permissionRequestsByMessageId = new Map<string, SessionPermissionRequest[]>()
+  for (const request of pendingPermissionRequests) {
+    if (!request.tool?.messageID) continue
+    const requests = permissionRequestsByMessageId.get(request.tool.messageID) ?? []
+    requests.push(request)
+    permissionRequestsByMessageId.set(request.tool.messageID, requests)
+  }
 
   for (const message of messages) {
     if (message.info.role !== "user" && message.info.role !== "assistant") continue
 
     const text = textParts(message.parts)
-    if (!text) continue
+    if (text) {
+      history.push({
+        id: message.info.id,
+        role: message.info.role,
+        text,
+        ...(message.info.role === "user" && !answeredUserIds.has(message.info.id) ? { queued: true } : {}),
+      })
+    }
 
-    history.push({
-      id: message.info.id,
-      role: message.info.role,
-      text,
-      ...(message.info.role === "user" && !answeredUserIds.has(message.info.id) ? { queued: true } : {}),
-    })
+    for (const request of permissionRequestsByMessageId.get(message.info.id) ?? []) {
+      history.push(permissionHistoryMessage(request))
+      appendedPermissionIds.add(request.id)
+    }
+  }
+
+  for (const request of pendingPermissionRequests) {
+    if (appendedPermissionIds.has(request.id)) continue
+    history.push(permissionHistoryMessage(request))
   }
 
   return history
+}
+
+function toSessionPermissionRequest(request: PermissionRequest): SessionPermissionRequest {
+  return {
+    id: request.id,
+    sessionID: request.sessionID,
+    permission: request.permission,
+    patterns: request.patterns,
+    summary: formatPermissionRequest(request.permission, request.patterns),
+    ...(request.tool !== undefined ? { tool: request.tool } : {}),
+  }
+}
+
+export function formatPermissionRequests(requests: SessionPermissionRequest[]): string {
+  if (requests.length === 0) return ""
+  if (requests.length === 1) return requests[0]!.summary
+  const permissions = [...new Set(requests.map((request) => request.permission))].join(", ")
+  return `${requests.length} permission requests: ${permissions}`
+}
+
+function formatPermissionRequest(permission: string, patterns: string[]): string {
+  const patternText = patterns.length > 0 ? ` ${patterns.join(", ")}` : ""
+  return `Permission requested: ${permission}${patternText}`
+}
+
+function permissionHistoryMessage(request: SessionPermissionRequest): SessionHistoryMessage {
+  return {
+    id: `permission:${request.id}`,
+    role: "assistant",
+    text: request.summary,
+    permissionRequested: true,
+  }
 }
 
 function routeOptions(input: { directory?: string | undefined; workspaceID?: string | undefined }) {
@@ -416,6 +527,10 @@ function historyTokens(message: AssistantMessage): number {
 
 function hasContextTokens(message: AssistantMessage): boolean {
   return historyTokens(message) > 0
+}
+
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError"
 }
 
 function textParts(parts: Part[]): string {

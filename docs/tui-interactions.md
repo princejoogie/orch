@@ -46,7 +46,7 @@ Mouse support should mirror keyboard selection, not create a second state model.
 
 - Rows support hover, click-to-select, and double-click to prompt the selected session.
 - Lane titles support click-to-select and double-click to collapse or expand the lane; keyboard `enter` does the same for the selected lane.
-- Project tabs support hover and click-to-select.
+- Project tabs support hover and click-to-select. The active project shows indented worktree filter rows when it has multiple worktrees; those rows support hover and click-to-select. Selecting the project row clears the worktree filter and shows sessions from every worktree.
 - Dialog options support click selection where useful.
 - The top menu bar sits above the session list, not above the sidebar.
 - Top menu rows mirror keyboard commands, show their keymaps, highlight on hover/selection, switch menus on hover while a dropdown is open, and support up/down/tab plus enter/escape navigation.
@@ -67,6 +67,6 @@ Search uses OpenTUI `<input>` and prompt/new-session dialogs use `<textarea>`. S
 - Single-line search should stay live via `onInput`, not commit-only `onChange`.
 - Do not replay app state into inputs after `onInput`; only write into the widget for explicit app-owned resets such as Ctrl-C clearing.
 - The new-session dialog owns focus state between its textarea, worktree selector, model selector, and variant selector. `tab` changes dialog focus; selector navigation keys are scoped out while the textarea is focused, the model/provider/variant values render inside the input border, `enter` commits the focused worktree back to the textarea, the model selector uses provider then model then variant selection steps, and `dd` opens removal confirmation for a focused non-primary worktree.
-- The prompt dialog owns focus state between its textarea, model selector, and variant selector. It renders model/provider/variant values inside the input border, defaults them from the session row, sends the selected model and variant with the prompt, and stays open after a successful send.
+- The prompt action opens a permission dialog first when the selected session has pending permission requests; allow once, allow always, or deny opens the prompt dialog afterward, while cancel returns to the dashboard. The prompt dialog owns focus state between its textarea, model selector, and variant selector. It renders model/provider/variant values inside the input border, defaults them from the session row, sends the selected model and variant with the prompt, and stays open after a successful send.
 
 If we add custom query modals later, route raw text input through one dispatcher rather than several independent keyboard hooks.

@@ -197,8 +197,8 @@ function SessionItem({
       onMouseOut={() => onHover(false)}
     >
       <text
-        content={multiSelectActive ? `${checked ? "☑" : "☐"} ` : `${sectionMarker(section, now)} `}
-        style={{ fg: multiSelectActive && checked ? theme.primary : sectionMarkerColor(section.status) }}
+        content={multiSelectActive ? `${checked ? "☑" : "☐"} ` : `${rowMarker(row, section, now)} `}
+        style={{ fg: multiSelectActive && checked ? theme.primary : rowMarkerColor(row, section.status) }}
       />
       <text
         content={truncate(row.title, titleWidth).padEnd(titleWidth)}
@@ -241,7 +241,17 @@ function sectionMarkerColor(status: LaneStatus): string {
   return theme.success
 }
 
+function rowMarkerColor(row: SessionRow, status: LaneStatus): string {
+  if (row.pendingPermissionRequests.length > 0) return theme.warning
+  return sectionMarkerColor(status)
+}
+
 function sectionMarker(section: Section, now: Date): string {
   if (section.status !== "working") return section.marker
   return WORKING_MARKERS[Math.floor(now.getTime() / 80) % WORKING_MARKERS.length]!
+}
+
+function rowMarker(row: SessionRow, section: Section, now: Date): string {
+  if (row.pendingPermissionRequests.length > 0) return "△"
+  return sectionMarker(section, now)
 }

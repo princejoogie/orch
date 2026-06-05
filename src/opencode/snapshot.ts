@@ -5,8 +5,24 @@ import type {
   Session as OpencodeSession,
   SessionStatus as OpencodeSessionStatus,
 } from "@opencode-ai/sdk/v2"
-import { DEFAULT_LIMIT, loadContextUsage, loadLatestMessages, opencodeClient, opencodeServerUrl } from "./client.ts"
-import type { DashboardSnapshot, ProjectRow, ProjectSnapshot, SessionRow, SessionStatus, WorktreeRow } from "./types.ts"
+import {
+  DEFAULT_LIMIT,
+  formatPermissionRequests,
+  loadContextUsage,
+  loadLatestMessages,
+  loadPendingPermissions,
+  opencodeClient,
+  opencodeServerUrl,
+} from "./client.ts"
+import type {
+  DashboardSnapshot,
+  ProjectRow,
+  ProjectSnapshot,
+  SessionPermissionRequest,
+  SessionRow,
+  SessionStatus,
+  WorktreeRow,
+} from "./types.ts"
 
 const PROJECT_SESSION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -19,14 +35,20 @@ export async function getSessions(
     { archived: false, limit: options.limit ?? DEFAULT_LIMIT },
     { throwOnError: true, ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   )
-  const [statuses, details] = await Promise.all([
+  const [statuses, permissions] = await Promise.all([
     loadStatuses(sessions.data, serverUrl, options.signal),
-    loadSessionDetails(sessions.data, serverUrl, options.signal),
+    loadPermissionRequests(sessions.data, serverUrl, options.signal),
   ])
+  const details = await loadSessionDetails(sessions.data, serverUrl, options.signal, permissions)
 
   return {
     rows: sessions.data.map((session) =>
-      toRow(session, statuses.get(routeKey(session))?.[session.id], details.get(session.id)),
+      toRow(
+        session,
+        statuses.get(routeKey(session))?.[session.id],
+        details.get(session.id),
+        permissions.get(session.id),
+      ),
     ),
     serverUrl,
     scannedAt: new Date(),
@@ -83,17 +105,24 @@ export async function getProjectSessions(options: {
     },
     { throwOnError: true, ...(options.signal !== undefined ? { signal: options.signal } : {}) },
   )
-  const projectSessions = sessions.data.filter(
+  const projectSessions = sessionListItems(sessions.data).filter(
     (session) => session.projectID === options.project.id && isActiveSession(session),
   )
-  const [statuses, details] = await Promise.all([
+  const [statuses, permissions] = await Promise.all([
     loadStatuses(projectSessions, serverUrl, options.signal),
-    loadSessionDetails(projectSessions, serverUrl, options.signal),
+    loadPermissionRequests(projectSessions, serverUrl, options.signal),
   ])
+  const details = await loadSessionDetails(projectSessions, serverUrl, options.signal, permissions)
 
   return {
     rows: projectSessions.map((session) =>
-      toRow(session, statuses.get(routeKey(session))?.[session.id], details.get(session.id), options.project),
+      toRow(
+        session,
+        statuses.get(routeKey(session))?.[session.id],
+        details.get(session.id),
+        permissions.get(session.id),
+        options.project,
+      ),
     ),
     serverUrl,
     scannedAt: new Date(),
@@ -180,7 +209,7 @@ async function loadRecentProjectSessionUpdated(
       { directory: project.worktree, scope: "project", start },
       { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
     )
-    return sessions.data
+    return sessionListItems(sessions.data)
       .filter((session) => session.projectID === project.id && isActiveSession(session))
       .reduce<number | undefined>(
         (updated, session) => Math.max(updated ?? session.time.updated, session.time.updated),
@@ -260,14 +289,17 @@ async function loadSessionDetails(
   sessions: SessionLike[],
   serverUrl: string,
   signal: AbortSignal | undefined,
+  permissions: Map<string, SessionPermissionRequest[]> = new Map(),
 ): Promise<Map<string, SessionDetails>> {
   const entries = await Promise.all(
     sessions.map(async (session): Promise<readonly [string, SessionDetails]> => {
+      const pendingPermissionRequests = permissions.get(session.id) ?? []
       try {
         const messages = await loadLatestMessages({
           sessionID: session.id,
           directory: session.directory,
           serverUrl,
+          pendingPermissionRequests,
           ...(signal !== undefined ? { signal } : {}),
           ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
         })
@@ -297,7 +329,15 @@ async function loadSessionDetails(
       } catch (detailsError) {
         if (isAbortError(detailsError)) throw detailsError
         console.error("Failed to load session details", detailsError)
-        return [session.id, { latestMessage: "", latestUserMessage: "", messages: [], hasMoreMessages: false }] as const
+        return [
+          session.id,
+          {
+            latestMessage: formatPermissionRequests(pendingPermissionRequests),
+            latestUserMessage: "",
+            messages: [],
+            hasMoreMessages: false,
+          },
+        ] as const
       }
     }),
   )
@@ -305,11 +345,62 @@ async function loadSessionDetails(
   return new Map(entries)
 }
 
+async function loadPermissionRequests(
+  sessions: SessionLike[],
+  serverUrl: string,
+  signal: AbortSignal | undefined,
+): Promise<Map<string, SessionPermissionRequest[]>> {
+  const sessionIds = new Set(sessions.map((session) => session.id))
+  const routes = new Map<string, { directory: string; workspaceID?: string | undefined }>()
+  for (const session of sessions) {
+    routes.set(routeKey(session), {
+      directory: session.directory,
+      ...(session.workspaceID !== undefined ? { workspaceID: session.workspaceID } : {}),
+    })
+  }
+
+  const requests = (
+    await Promise.all(
+      [...routes.values()].map(async (route) => {
+        try {
+          return await loadPendingPermissions({
+            directory: route.directory,
+            serverUrl,
+            signal,
+            ...(route.workspaceID !== undefined ? { workspaceID: route.workspaceID } : {}),
+          })
+        } catch (permissionError) {
+          if (isAbortError(permissionError)) throw permissionError
+          console.error("Failed to load pending permission requests", permissionError)
+          return []
+        }
+      }),
+    )
+  ).flat()
+
+  const grouped = new Map<string, SessionPermissionRequest[]>()
+  for (const request of requests) {
+    if (!sessionIds.has(request.sessionID)) continue
+    const existing = grouped.get(request.sessionID) ?? []
+    if (!existing.some((item) => item.id === request.id)) {
+      existing.push(request)
+      grouped.set(request.sessionID, existing)
+    }
+  }
+
+  return grouped
+}
+
 function routeKey(input: { directory: string; workspaceID?: string | undefined }): string {
   return `${input.directory}\t${input.workspaceID ?? ""}`
 }
 
 type SessionLike = GlobalSession | OpencodeSession
+type SessionListData = OpencodeSession[] | { items: OpencodeSession[] }
+
+export function sessionListItems(data: SessionListData): OpencodeSession[] {
+  return Array.isArray(data) ? data : data.items
+}
 
 function isActiveSession(session: SessionLike): boolean {
   return !session.time.archived
@@ -330,17 +421,20 @@ function toRow(
   session: SessionLike,
   status?: OpencodeSessionStatus,
   details?: SessionDetails,
+  pendingPermissionRequests: SessionPermissionRequest[] = [],
   project?: ProjectRow,
 ): SessionRow {
   const globalProject = "project" in session ? session.project : undefined
   const projectWorktree = globalProject?.worktree ?? project?.directory
+  const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
   return {
     id: session.id,
     title: session.title,
-    latestMessage: details?.latestMessage ?? "",
+    latestMessage: permissionMessage || details?.latestMessage || "",
     latestUserMessage: details?.latestUserMessage ?? "",
     messages: details?.messages ?? [],
     hasMoreMessages: details?.hasMoreMessages ?? false,
+    pendingPermissionRequests,
     ...(details?.contextTokens !== undefined ? { contextTokens: details.contextTokens } : {}),
     ...(details?.contextPercent !== undefined ? { contextPercent: details.contextPercent } : {}),
     directory: session.directory,
