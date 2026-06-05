@@ -49,6 +49,11 @@ export interface PromptDialogCtx {
   readonly commitModelSelector: () => void
 }
 
+export interface PermissionDialogCtx {
+  readonly close: () => void
+  readonly decide: (reply: "once" | "always" | "reject") => void
+}
+
 export interface DeleteSessionDialogCtx {
   readonly close: () => void
   readonly confirm: () => void
@@ -71,6 +76,7 @@ export interface SearchCtx {
 
 export interface ListNavCtx {
   readonly tabCount: number
+  readonly worktreeCount: number
   readonly hasSelection: boolean
   readonly hasDeletableSelection: boolean
   readonly hasInterruptibleSelection: boolean
@@ -91,6 +97,7 @@ export interface ListNavCtx {
   readonly openMenu: (menu: "actions" | "selected" | "servers") => void
   readonly selectTab: (index: number) => void
   readonly cycleTab: (delta: -1 | 1) => void
+  readonly cycleWorktree: (delta: -1 | 1) => void
   readonly moveSelection: (delta: number) => void
   readonly moveSelectionClamped: (delta: number) => void
   readonly moveTop: () => void
@@ -110,6 +117,7 @@ export interface GlobalKeymapCtx {
 export interface DashboardKeymapCtx {
   readonly addSessionDialog: AddSessionDialogCtx | null
   readonly deleteWorktreeDialog: DeleteWorktreeDialogCtx | null
+  readonly permissionDialog: PermissionDialogCtx | null
   readonly promptDialog: PromptDialogCtx | null
   readonly deleteSessionDialog: DeleteSessionDialogCtx | null
   readonly interruptSessionDialog: InterruptSessionDialogCtx | null
@@ -134,6 +142,7 @@ const Menu = context<MenuCtx>()
 const HelpDialog = context<HelpDialogCtx>()
 const AddSessionDialog = context<AddSessionDialogCtx>()
 const DeleteWorktreeDialog = context<DeleteWorktreeDialogCtx>()
+const PermissionDialog = context<PermissionDialogCtx>()
 const PromptDialog = context<PromptDialogCtx>()
 const DeleteSessionDialog = context<DeleteSessionDialogCtx>()
 const InterruptSessionDialog = context<InterruptSessionDialogCtx>()
@@ -303,6 +312,13 @@ const promptDialogKeymap = PromptDialog(
   },
 )
 
+const permissionDialogKeymap = PermissionDialog(
+  { id: "permission.cancel", title: "Cancel permission prompt", keys: ["escape"], run: (ctx) => ctx.close() },
+  { id: "permission.allow-once", title: "Allow once", keys: ["return", "y"], run: (ctx) => ctx.decide("once") },
+  { id: "permission.allow-always", title: "Allow always", keys: ["a"], run: (ctx) => ctx.decide("always") },
+  { id: "permission.deny", title: "Deny permission", keys: ["d", "n"], run: (ctx) => ctx.decide("reject") },
+)
+
 const deleteWorktreeDialogKeymap = DeleteWorktreeDialog(
   ...confirmModalBindings<DeleteWorktreeDialogCtx>({
     id: "worktree-delete",
@@ -419,6 +435,20 @@ const listNavKeymap = ListNav(
   },
   { id: "projects.next", title: "Next project", keys: ["tab"], run: (ctx) => ctx.cycleTab(1) },
   { id: "projects.previous", title: "Previous project", keys: ["shift+tab"], run: (ctx) => ctx.cycleTab(-1) },
+  {
+    id: "worktrees.next",
+    title: "Next worktree filter",
+    keys: ["shift+j"],
+    enabled: (ctx) => ctx.worktreeCount > 1 || "Only one worktree.",
+    run: (ctx) => ctx.cycleWorktree(1),
+  },
+  {
+    id: "worktrees.previous",
+    title: "Previous worktree filter",
+    keys: ["shift+k"],
+    enabled: (ctx) => ctx.worktreeCount > 1 || "Only one worktree.",
+    run: (ctx) => ctx.cycleWorktree(-1),
+  },
   ...tabNumberBindings,
   { id: "selection.down", title: "Move down", keys: ["j", "down", "ctrl+n"], run: (ctx) => ctx.moveSelection(1) },
   { id: "selection.up", title: "Move up", keys: ["k", "up"], run: (ctx) => ctx.moveSelection(-1) },
@@ -455,6 +485,7 @@ export const globalKeymap = Global(
 export const dashboardPageKeymap = Dashboard(
   deleteWorktreeDialogKeymap.scope((ctx) => ctx.deleteWorktreeDialog),
   addSessionDialogKeymap.scope((ctx) => ctx.addSessionDialog),
+  permissionDialogKeymap.scope((ctx) => ctx.permissionDialog),
   promptDialogKeymap.scope((ctx) => ctx.promptDialog),
   deleteSessionDialogKeymap.scope((ctx) => ctx.deleteSessionDialog),
   interruptSessionDialogKeymap.scope((ctx) => ctx.interruptSessionDialog),

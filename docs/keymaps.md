@@ -64,6 +64,7 @@ Disabled bindings count as handled by the keymap. This is intentional: the key s
 ## Dashboard Selection
 
 - Lane titles are selectable entries. `enter` toggles the selected lane between expanded and collapsed.
+- `tab` and `shift+tab` cycle projects. `shift+j` and `shift+k` cycle the selected worktree filter within the active project, including the project row itself for no worktree filter. Projects with only one worktree expose only the project row.
 - `v` toggles visual session selection. Entering visual mode toggles the focused session, and moving with `j`/`k`/arrows while visual mode is active toggles each focused session.
 - Checked sessions render with a full-row highlight so visual selection is visible beyond the checkbox marker.
 - `space` toggles the focused session in the selected set without entering visual mode.

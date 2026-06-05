@@ -33,6 +33,7 @@ import {
   type LaneStatus,
   type ProjectTab,
   type Selection,
+  type WorktreeOption,
 } from "../lib/utils.ts"
 import {
   createSessionWithPrompt,
@@ -41,6 +42,7 @@ import {
   getProjects,
   interruptSession,
   removeWorktree,
+  replyPermissionRequest,
   sendPrompt,
   selectTuiSession,
   type ModelProviderOption,
@@ -60,6 +62,9 @@ export type DashboardController = {
   tabs: ProjectTab[]
   activeTab?: ProjectTab | undefined
   activeTabIndex: number
+  activeWorktrees: WorktreeOption[]
+  activeWorktree?: WorktreeOption | undefined
+  activeWorktreeIndex: number
   activeTabRowsLoaded: boolean
   activeProjectRows: SessionRow[]
   rowsBySection: Record<LaneStatus, SessionRow[]>
@@ -71,6 +76,7 @@ export type DashboardController = {
   openMenu: (menu: MenuId) => void
   openSettingsPage: () => void
   submitAddSession: (value: string) => Promise<void>
+  replyToPermission: (reply: "once" | "always" | "reject") => Promise<void>
   submitPrompt: (value: string) => Promise<void>
   confirmDeleteWorktree: () => void
   confirmDeleteSession: () => void
@@ -137,12 +143,24 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     : 0
   const activeTab = tabs[activeTabIndex]
   const activeTabKey = activeTab?.id
+  const projectWorktrees = useMemo(() => worktreeOptions(activeTab), [activeTab])
+  const activeWorktrees = useMemo(() => (projectWorktrees.length > 1 ? projectWorktrees : []), [projectWorktrees])
+  const selectedWorktreeDirectory = activeTabKey ? dashboardStore.activeWorktreeByProjectId[activeTabKey] : undefined
+  const activeWorktreeIndex = selectedWorktreeDirectory
+    ? activeWorktrees.findIndex((worktree) => worktree.directory === selectedWorktreeDirectory)
+    : -1
+  const activeWorktree = activeWorktreeIndex >= 0 ? activeWorktrees[activeWorktreeIndex] : undefined
   const activeTabRowsLoaded = activeTabKey !== undefined && Object.hasOwn(dashboardStore.rowsByProjectId, activeTabKey)
   const activeTabCachedRows = activeTabKey ? dashboardStore.rowsByProjectId[activeTabKey] : undefined
   const activeProjectRows = activeTabRowsLoaded ? (activeTabCachedRows ?? EMPTY_SESSION_ROWS) : EMPTY_SESSION_ROWS
   const filteredRows = useMemo(
-    () => activeProjectRows.filter((row) => fuzzySessionMatch(row, dashboardStore.searchValue)),
-    [activeProjectRows, dashboardStore.searchValue],
+    () =>
+      activeProjectRows.filter(
+        (row) =>
+          (!activeWorktree || row.directory === activeWorktree.directory) &&
+          fuzzySessionMatch(row, dashboardStore.searchValue),
+      ),
+    [activeProjectRows, activeWorktree, dashboardStore.searchValue],
   )
   const rowsBySection = useMemo(() => projectRowsBySection(filteredRows, now), [filteredRows, now])
   const resolvedSelection = useMemo(
@@ -188,7 +206,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       shortcut: "enter",
       disabled: !currentRow,
       run: () => {
-        if (currentRow) openPromptDialog(currentRow)
+        if (currentRow) openPromptOrPermissionDialog(currentRow)
       },
     },
     {
@@ -243,6 +261,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           dashboardStore.searchFocused ||
           Boolean(dashboardStore.addSessionDialog) ||
           Boolean(dashboardStore.deleteWorktreeDialog) ||
+          Boolean(dashboardStore.permissionDialog) ||
           Boolean(dashboardStore.promptDialog) ||
           globalStore.page === "settings",
         menu:
@@ -250,6 +269,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           !globalStore.shortcutsDialogOpen &&
           !dashboardStore.addSessionDialog &&
           !dashboardStore.deleteWorktreeDialog &&
+          !dashboardStore.permissionDialog &&
           !dashboardStore.promptDialog &&
           !dashboardStore.deleteDialog &&
           !dashboardStore.interruptDialog &&
@@ -349,6 +369,12 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         deleteWorktreeDialog: dashboardStore.deleteWorktreeDialog
           ? { close: dashboardStore.closeDeleteWorktreeDialog, confirm: confirmDeleteWorktree }
           : null,
+        permissionDialog: dashboardStore.permissionDialog
+          ? {
+              close: dashboardStore.closePermissionDialog,
+              decide: (reply) => void replyToPermission(reply),
+            }
+          : null,
         promptDialog: dashboardStore.promptDialog
           ? {
               providerCount: dashboardStore.promptDialog.modelProviders.length,
@@ -415,6 +441,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           globalStore.shortcutsDialogOpen ||
           dashboardStore.addSessionDialog ||
           dashboardStore.deleteWorktreeDialog ||
+          dashboardStore.permissionDialog ||
           dashboardStore.promptDialog ||
           dashboardStore.deleteDialog ||
           dashboardStore.interruptDialog ||
@@ -447,6 +474,8 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                   const tab = tabs[nextIndex(activeTabIndex, delta, tabs.length)]
                   dashboardStore.setActiveTabId(tab?.id)
                 },
+                worktreeCount: activeWorktrees.length + 1,
+                cycleWorktree: cycleActiveWorktree,
                 toggleVisualSelection: dashboardStore.toggleVisualSelection,
                 toggleSelectedSession: dashboardStore.toggleSelectedSessionId,
                 clearMultiSelection: dashboardStore.clearMultiSelection,
@@ -472,6 +501,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
           !globalStore.shortcutsDialogOpen &&
           !dashboardStore.addSessionDialog &&
           !dashboardStore.deleteWorktreeDialog &&
+          !dashboardStore.permissionDialog &&
           !dashboardStore.promptDialog &&
           !dashboardStore.deleteDialog &&
           !dashboardStore.interruptDialog &&
@@ -499,6 +529,11 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     const interval = setInterval(() => void refetchProjects(), POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [refetchProjects])
+
+  useEffect(() => {
+    if (!activeTabKey || !selectedWorktreeDirectory || activeWorktreeIndex !== -1) return
+    dashboardStore.setActiveWorktreeDirectory(activeTabKey)
+  }, [activeTabKey, activeWorktreeIndex, dashboardStore, selectedWorktreeDirectory])
 
   useEffect(() => {
     if (!projectErrorToastKey) {
@@ -569,7 +604,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       return
     }
 
-    if (currentRow) openPromptDialog(currentRow)
+    if (currentRow) openPromptOrPermissionDialog(currentRow)
   }
 
   function moveDashboardSelection(delta: number, clamped = false) {
@@ -583,10 +618,11 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     if (!activeTab) return
     const worktrees = worktreeOptions(activeTab)
     if (worktrees.length === 0) return
-    const initialWorktreeIndex = currentRow
+    const initialWorktreeDirectory = currentRow?.directory ?? activeWorktree?.directory
+    const initialWorktreeIndex = initialWorktreeDirectory
       ? Math.max(
           0,
-          worktrees.findIndex((worktree) => worktree.directory === currentRow.directory),
+          worktrees.findIndex((worktree) => worktree.directory === initialWorktreeDirectory),
         )
       : 0
     dashboardStore.openAddSessionDialog({
@@ -623,6 +659,16 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   function openMenu(menu: MenuId) {
     globalStore.setOpenMenu(menu)
     globalStore.setSelectedMenuIndex(0)
+  }
+
+  function cycleActiveWorktree(delta: -1 | 1): boolean {
+    const filterCount = activeWorktrees.length + 1
+    if (!activeTab || filterCount <= 1) return false
+
+    const nextFilterIndex = nextIndex(activeWorktreeIndex + 1, delta, filterCount)
+    if (dashboardStore.activeTabId !== activeTab.id) dashboardStore.setActiveTabId(activeTab.id)
+    dashboardStore.setActiveWorktreeDirectory(activeTab.id, activeWorktrees[nextFilterIndex - 1]?.directory)
+    return true
   }
 
   function executeSelectedMenuItem() {
@@ -666,7 +712,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     if (lastClick?.rowId === row.id && time - lastClick.time <= DOUBLE_CLICK_MS) {
       lastSessionClickRef.current = null
-      openPromptDialog(row)
+      openPromptOrPermissionDialog(row)
       return
     }
 
@@ -696,7 +742,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     switch (action) {
       case "prompt-selected-session":
         if (!currentRow) return false
-        openPromptDialog(currentRow)
+        openPromptOrPermissionDialog(currentRow)
         return true
       case "create-session":
         if (!activeTab || worktreeOptions(activeTab).length === 0) {
@@ -771,6 +817,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         dashboardStore.setActiveTabId(tab?.id)
         return tabs.length > 0
       }
+      case "next-worktree":
+        return cycleActiveWorktree(1)
+      case "previous-worktree":
+        return cycleActiveWorktree(-1)
       case "open-actions-menu":
         globalStore.toggleMenu("actions")
         return true
@@ -811,6 +861,44 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       value: "",
       sending: false,
     })
+  }
+
+  function openPromptOrPermissionDialog(row: SessionRow) {
+    const request = row.pendingPermissionRequests[0]
+    if (request) {
+      dashboardStore.openPermissionDialog({ row, request })
+      return
+    }
+
+    openPromptDialog(row)
+  }
+
+  async function replyToPermission(reply: "once" | "always" | "reject") {
+    const dialog = dashboardStoreRef.current.permissionDialog
+    if (!dialog || dialog.responding) return
+
+    dashboardStoreRef.current.setPermissionResponding()
+    try {
+      await replyPermissionRequest({
+        requestID: dialog.request.id,
+        reply,
+        directory: dialog.row.directory,
+        workspaceID: dialog.row.workspaceID,
+        serverUrl: globalStoreRef.current.config.activeServerUrl,
+      })
+      dashboardStoreRef.current.closePermissionDialog()
+      openPromptDialog({
+        ...dialog.row,
+        messages: dialog.row.messages.filter((message) => !message.permissionRequested),
+        pendingPermissionRequests: [],
+      })
+      await refreshDashboard()
+    } catch (permissionError) {
+      console.error("Failed to respond to permission request", permissionError)
+      const detail = errorMessage(permissionError)
+      dashboardStoreRef.current.setPermissionError(detail)
+      globalStoreRef.current.addToast({ status: "error", title: "Failed to respond to permission", detail })
+    }
   }
 
   async function openTmuxSession(row: SessionRow) {
@@ -1057,6 +1145,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     tabs,
     activeTab,
     activeTabIndex,
+    activeWorktrees,
+    activeWorktree,
+    activeWorktreeIndex,
     activeTabRowsLoaded,
     activeProjectRows,
     rowsBySection,
@@ -1068,6 +1159,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     openMenu,
     openSettingsPage,
     submitAddSession,
+    replyToPermission,
     submitPrompt,
     confirmDeleteWorktree,
     confirmDeleteSession,

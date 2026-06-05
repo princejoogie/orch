@@ -40,7 +40,7 @@ Use feature-specific component files for feature-specific data.
 
 Examples:
 
-- `session-dialogs.tsx` contains prompt/add/delete session dialogs.
+- `session-dialogs.tsx` contains permission, prompt, add, and delete session dialogs.
 - `shortcuts.ts` contains shortcut metadata and command action identifiers.
 - `shortcuts-dialog.tsx` contains shortcut/help rendering.
 - `sidebar.tsx` contains sidebar composition and delegates search/header/project tab behavior to sidebar-owned components.
@@ -79,6 +79,7 @@ Feature data like session labels, shortcuts, and command definitions belongs to 
 `src/store/dashboard.ts` owns dashboard-only state:
 
 - selected project tab
+- selected project worktree filters
 - dashboard search and selection
 - session workflow dialogs
 - collapsed lanes and visual selection
@@ -106,9 +107,9 @@ Generic keymap files stay reusable by modeling parsing and dispatch. App-specifi
 
 `src/opencode/client.ts` owns low-level API calls.
 
-`src/opencode/snapshot.ts` owns assembling the dashboard snapshot.
+`src/opencode/snapshot.ts` owns assembling the dashboard snapshot, including pending permission requests that move sessions into the needs-input lane.
 
-Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from local `git worktree list --porcelain`, and selected-project sessions come from `client.session.list()`. Project snapshots are filtered to projects with sessions whose `projectID` matches the project row and sorted by latest session activity before reaching UI code.
+Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from local `git worktree list --porcelain`, selected-project sessions come from `client.session.list()`, and pending permission requests come from `client.permission.list()`. Project snapshots are filtered to projects with sessions whose `projectID` matches the project row and sorted by latest session activity before reaching UI code. Project session rows are cached per project, then the dashboard controller applies the active worktree filter before rendering the session list.
 
 UI components should consume prepared `SessionRow` data rather than calling the opencode SDK directly.
 

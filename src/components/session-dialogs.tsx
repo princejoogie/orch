@@ -32,6 +32,7 @@ type PromptHistoryLine = {
   role?: SessionHistoryMessage["role"] | undefined
   roleLabel?: string | undefined
   queued?: boolean | undefined
+  permissionRequested?: boolean | undefined
 }
 
 const PROMPT_USER_BULLET = theme.primary
@@ -359,9 +360,11 @@ function PromptHistoryText({ line, width }: { line: PromptHistoryLine; width: nu
   if (line.roleLabel) {
     const bulletColor = line.queued
       ? theme.warning
-      : line.role === "user"
-        ? PROMPT_USER_BULLET
-        : PROMPT_ASSISTANT_BULLET
+      : line.permissionRequested
+        ? theme.warning
+        : line.role === "user"
+          ? PROMPT_USER_BULLET
+          : PROMPT_ASSISTANT_BULLET
     const rest = ` ${line.roleLabel}:`
     const padding = " ".repeat(Math.max(0, width - 1 - rest.length))
 
@@ -385,18 +388,29 @@ function promptHistoryLines(messages: SessionHistoryMessage[], width: number): P
       key: `${index}:${line.key}`,
       text: line.text,
       role: message.role,
+      permissionRequested: message.permissionRequested,
     }))
     const previousMessage = messages[index - 1]
     const showRole =
-      !previousMessage || previousMessage.role !== message.role || previousMessage.queued !== message.queued
+      !previousMessage ||
+      previousMessage.role !== message.role ||
+      previousMessage.queued !== message.queued ||
+      previousMessage.permissionRequested !== message.permissionRequested
     const roleLine = showRole
       ? [
           {
             key: `${index}:role`,
             text: "",
             role: message.role,
-            roleLabel: message.role === "user" ? (message.queued ? "User (queued)" : "User") : "Assistant",
+            roleLabel: message.permissionRequested
+              ? "Permission requested"
+              : message.role === "user"
+                ? message.queued
+                  ? "User (queued)"
+                  : "User"
+                : "Assistant",
             queued: message.queued,
+            permissionRequested: message.permissionRequested,
           },
         ]
       : []
@@ -408,6 +422,125 @@ function promptHistoryLines(messages: SessionHistoryMessage[], width: number): P
 
 function withoutQueuedMarkers(messages: SessionHistoryMessage[]): SessionHistoryMessage[] {
   return messages.map(({ queued: _queued, ...message }) => message)
+}
+
+export function PermissionDialog({ width, height }: { width: number; height: number }) {
+  const controller = useDashboardControllerContext()
+  const dashboardStore = useDashboardStore()
+  const state = dashboardStore.permissionDialog
+
+  if (!state) return null
+
+  const responding = Boolean(state.responding)
+  const dialogWidth = Math.min(Math.max(58, Math.floor(width * 0.65)), 84, width - 4)
+  const bodyWidth = Math.max(1, dialogWidth - 6)
+  const visiblePatterns = state.request.patterns.slice(0, 4)
+  const patternCounts = new Map<string, number>()
+  const visiblePatternRows = visiblePatterns.map((pattern) => {
+    const count = (patternCounts.get(pattern) ?? 0) + 1
+    patternCounts.set(pattern, count)
+    return { key: `${pattern}:${count}`, pattern }
+  })
+  const hiddenPatternCount = Math.max(0, state.request.patterns.length - visiblePatterns.length)
+  const patternLineCount = Math.max(1, visiblePatterns.length) + (hiddenPatternCount > 0 ? 1 : 0)
+  const bodyHeight = 4 + patternLineCount + (state.error ? 1 : 0)
+  const dialogHeight = Math.min(height - 2, bodyHeight + 7)
+  const requestIndex = state.row.pendingPermissionRequests.findIndex((request) => request.id === state.request.id)
+  const requestCount = state.row.pendingPermissionRequests.length
+  const footerWidth = dialogWidth - 4
+  const buttonLayout = permissionButtonLayout(footerWidth)
+  const headerRight = responding
+    ? "replying"
+    : requestCount > 1 && requestIndex !== -1
+      ? `${requestIndex + 1}/${requestCount}`
+      : undefined
+
+  return (
+    <StandardDialogFrame
+      screenWidth={width}
+      screenHeight={height}
+      width={dialogWidth}
+      height={dialogHeight}
+      title="Permission required"
+      headerRight={headerRight}
+      subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
+      onClose={responding ? undefined : dashboardStore.closePermissionDialog}
+      footer={
+        <ButtonRow width={footerWidth}>
+          <Button
+            label="Once"
+            shortcut="↵"
+            width={buttonLayout.once}
+            disabled={responding}
+            onPress={() => void controller.replyToPermission("once")}
+          />
+          <text content={" ".repeat(buttonLayout.gap)} />
+          <Button
+            label="Always"
+            shortcut="a"
+            width={buttonLayout.always}
+            disabled={responding}
+            onPress={() => void controller.replyToPermission("always")}
+          />
+          <text content={" ".repeat(buttonLayout.gap)} />
+          <Button
+            label="Deny"
+            shortcut="d"
+            width={buttonLayout.deny}
+            danger
+            disabled={responding}
+            onPress={() => void controller.replyToPermission("reject")}
+          />
+          <text content={" ".repeat(buttonLayout.gap)} />
+          <Button
+            label="Cancel"
+            shortcut="esc"
+            width={buttonLayout.cancel}
+            disabled={responding}
+            onPress={dashboardStore.closePermissionDialog}
+          />
+        </ButtonRow>
+      }
+    >
+      <PlainLine text={fitCell(state.request.summary, bodyWidth)} fg={theme.warning} />
+      <PlainLine text={fitCell(`Permission: ${state.request.permission}`, bodyWidth)} fg={theme.text} />
+      <PlainLine text={fitCell(`Session: ${state.row.worktreeName}`, bodyWidth)} fg={theme.textMuted} />
+      <PlainLine text={state.request.patterns.length === 1 ? "Pattern:" : "Patterns:"} fg={theme.text} />
+      {visiblePatternRows.length > 0 ? (
+        visiblePatternRows.map((row) => (
+          <PlainLine key={row.key} text={fitCell(`  - ${row.pattern}`, bodyWidth)} fg={theme.textMuted} />
+        ))
+      ) : (
+        <PlainLine text="  none" fg={theme.textMuted} />
+      )}
+      {hiddenPatternCount > 0 ? (
+        <PlainLine text={fitCell(`  +${hiddenPatternCount} more`, bodyWidth)} fg={theme.textMuted} />
+      ) : null}
+      <DialogError error={state.error} width={dialogWidth} />
+    </StandardDialogFrame>
+  )
+}
+
+function permissionButtonLayout(width: number): {
+  once: number
+  always: number
+  deny: number
+  cancel: number
+  gap: number
+} {
+  const gap = width >= 50 ? 2 : 1
+  const sizes = { once: 10, always: 12, deny: 10, cancel: 12 }
+  const keys = ["once", "always", "deny", "cancel"] as const
+  let remaining = Math.max(0, width - gap * 3 - sizes.once - sizes.always - sizes.deny - sizes.cancel)
+  let index = 0
+
+  while (remaining > 0) {
+    sizes[keys[index % keys.length]!] += 1
+    remaining -= 1
+    index += 1
+  }
+
+  return { ...sizes, gap }
 }
 
 function modelSelectionForDefault(

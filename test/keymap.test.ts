@@ -136,12 +136,14 @@ describe("keymap dispatcher", () => {
     const ctx: DashboardKeymapCtx = {
       addSessionDialog: null,
       deleteWorktreeDialog: null,
+      permissionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
       interruptSessionDialog: null,
       search: null,
       listNav: {
         tabCount: 0,
+        worktreeCount: 0,
         hasSelection: false,
         hasDeletableSelection: false,
         hasInterruptibleSelection: false,
@@ -164,6 +166,7 @@ describe("keymap dispatcher", () => {
         openMenu: (menu) => openedMenus.push(menu),
         selectTab: () => {},
         cycleTab: () => {},
+        cycleWorktree: () => {},
         moveSelection: () => {},
         moveSelectionClamped: () => {},
         moveTop: () => {},
@@ -181,18 +184,77 @@ describe("keymap dispatcher", () => {
     expect(openedSettings).toBe(true)
   })
 
+  test("list navigation cycles worktree filters with shifted j/k", () => {
+    const moves: number[] = []
+    const ctx: DashboardKeymapCtx = {
+      addSessionDialog: null,
+      deleteWorktreeDialog: null,
+      permissionDialog: null,
+      promptDialog: null,
+      deleteSessionDialog: null,
+      interruptSessionDialog: null,
+      search: null,
+      listNav: {
+        tabCount: 1,
+        worktreeCount: 3,
+        hasSelection: false,
+        hasDeletableSelection: false,
+        hasInterruptibleSelection: false,
+        currentSessionId: undefined,
+        halfPage: 1,
+        refresh: () => {},
+        openAddSession: () => {},
+        openDeleteSession: () => {},
+        openInterruptSession: () => {},
+        executeSelection: () => {},
+        openTmux: () => {},
+        toggleVisualSelection: () => {},
+        toggleSelectedSession: () => {},
+        clearMultiSelection: () => false,
+        focusSearch: () => {},
+        openHelp: () => {},
+        openSettings: () => {},
+        openMenu: () => {},
+        selectTab: () => {},
+        cycleTab: () => {},
+        cycleWorktree: (delta) => moves.push(delta),
+        moveSelection: () => {},
+        moveSelectionClamped: () => {},
+        moveTop: () => {},
+        moveBottom: () => {},
+        quit: () => {},
+        toggleConsole: () => {},
+      },
+    }
+    const dispatcher = createDispatcher(dashboardPageKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("shift+j")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("shift+k")).kind).toBe("ran")
+
+    expect(moves).toEqual([1, -1])
+
+    const singleFilterDispatcher = createDispatcher(dashboardPageKeymap, () => ({
+      ...ctx,
+      listNav: ctx.listNav ? { ...ctx.listNav, worktreeCount: 1 } : null,
+    }))
+    expect(singleFilterDispatcher.dispatch(parseKey("shift+j")).kind).toBe("disabled")
+    expect(moves).toEqual([1, -1])
+  })
+
   test("list navigation uses multi-key session actions", () => {
     let deleted = false
     let interrupted = false
     const ctx: DashboardKeymapCtx = {
       addSessionDialog: null,
       deleteWorktreeDialog: null,
+      permissionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
       interruptSessionDialog: null,
       search: null,
       listNav: {
         tabCount: 0,
+        worktreeCount: 0,
         hasSelection: true,
         hasDeletableSelection: true,
         hasInterruptibleSelection: true,
@@ -217,6 +279,7 @@ describe("keymap dispatcher", () => {
         openMenu: () => {},
         selectTab: () => {},
         cycleTab: () => {},
+        cycleWorktree: () => {},
         moveSelection: () => {},
         moveSelectionClamped: () => {},
         moveTop: () => {},
@@ -274,6 +337,7 @@ describe("keymap dispatcher", () => {
         },
       },
       deleteWorktreeDialog: null,
+      permissionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
       interruptSessionDialog: null,
@@ -328,6 +392,7 @@ describe("keymap dispatcher", () => {
     const ctx: DashboardKeymapCtx = {
       addSessionDialog: null,
       deleteWorktreeDialog: null,
+      permissionDialog: null,
       promptDialog: {
         providerCount: 2,
         modelCount: 2,
@@ -374,6 +439,35 @@ describe("keymap dispatcher", () => {
     expect(closed).toBe(true)
   })
 
+  test("permission dialog supports reply shortcuts", () => {
+    const replies: string[] = []
+    let closed = false
+    const ctx: DashboardKeymapCtx = {
+      addSessionDialog: null,
+      deleteWorktreeDialog: null,
+      permissionDialog: {
+        close: () => {
+          closed = true
+        },
+        decide: (reply) => replies.push(reply),
+      },
+      promptDialog: null,
+      deleteSessionDialog: null,
+      interruptSessionDialog: null,
+      search: null,
+      listNav: null,
+    }
+    const dispatcher = createDispatcher(dashboardPageKeymap, () => ctx)
+
+    expect(dispatcher.dispatch(parseKey("return")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("a")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("d")).kind).toBe("ran")
+    expect(dispatcher.dispatch(parseKey("escape")).kind).toBe("ran")
+
+    expect(replies).toEqual(["once", "always", "reject"])
+    expect(closed).toBe(true)
+  })
+
   test("delete worktree dialog uses confirmation shortcuts", () => {
     let confirmed = false
     let closed = false
@@ -387,6 +481,7 @@ describe("keymap dispatcher", () => {
           confirmed = true
         },
       },
+      permissionDialog: null,
       promptDialog: null,
       deleteSessionDialog: null,
       interruptSessionDialog: null,

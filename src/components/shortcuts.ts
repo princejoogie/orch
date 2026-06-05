@@ -17,6 +17,8 @@ export type ShortcutAction =
   | "jump-to-bottom"
   | "next-project"
   | "previous-project"
+  | "next-worktree"
+  | "previous-worktree"
   | "open-actions-menu"
   | "open-selected-menu"
   | "open-server-selector"
@@ -61,6 +63,8 @@ export const SHORTCUTS: readonly Shortcut[] = [
   { scope: "Navigation", description: "Jump to bottom", shortcut: "G / end", action: "jump-to-bottom" },
   { scope: "Projects", description: "Next project", shortcut: "tab", action: "next-project" },
   { scope: "Projects", description: "Previous project", shortcut: "shift-tab", action: "previous-project" },
+  { scope: "Projects", description: "Next worktree filter", shortcut: "J", action: "next-worktree" },
+  { scope: "Projects", description: "Previous worktree filter", shortcut: "K", action: "previous-worktree" },
   { scope: "App", description: "Open actions menu", shortcut: "1", action: "open-actions-menu" },
   { scope: "App", description: "Open selected menu", shortcut: "2", action: "open-selected-menu" },
   { scope: "App", description: "Open server selector", shortcut: "ctrl-s", action: "open-server-selector" },

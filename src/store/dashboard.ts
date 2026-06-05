@@ -7,6 +7,7 @@ import type {
   DeleteSessionDialogState,
   DeleteWorktreeDialogState,
   InterruptSessionDialogState,
+  PermissionDialogState,
   PromptDialogState,
   Selection,
   WorktreeOption,
@@ -22,11 +23,13 @@ export type SessionListState = {
 
 export type DashboardStore = {
   activeTabId?: string | undefined
+  activeWorktreeByProjectId: Record<string, string>
   selection: Selection
   searchValue: string
   searchFocused: boolean
   addSessionDialog?: AddSessionDialogState | undefined
   deleteWorktreeDialog?: DeleteWorktreeDialogState | undefined
+  permissionDialog?: PermissionDialogState | undefined
   promptDialog?: PromptDialogState | undefined
   deleteDialog?: DeleteSessionDialogState | undefined
   interruptDialog?: InterruptSessionDialogState | undefined
@@ -40,6 +43,7 @@ export type DashboardStore = {
   rowsByProjectId: Record<string, SessionRow[]>
   sessionListState: SessionListState
   setActiveTabId: (activeTabId?: string | undefined) => void
+  setActiveWorktreeDirectory: (projectId: string, directory?: string | undefined) => void
   setSelection: (selection: Selection) => void
   setSearchValue: (searchValue: string) => void
   setSearchFocused: (searchFocused: boolean) => void
@@ -66,6 +70,10 @@ export type DashboardStore = {
   bumpAddSessionClearVersion: () => void
   openDeleteWorktreeDialog: (state: DeleteWorktreeDialogState) => void
   closeDeleteWorktreeDialog: () => void
+  openPermissionDialog: (state: PermissionDialogState) => void
+  closePermissionDialog: () => void
+  setPermissionResponding: () => void
+  setPermissionError: (error: string) => void
   openPromptDialog: (state: PromptDialogState) => void
   closePromptDialog: () => void
   setPromptValue: (value: string) => void
@@ -103,6 +111,7 @@ const DashboardStoreContext = createContext<StoreApi<DashboardStore> | undefined
 
 function createDashboardStore() {
   return createStore<DashboardStore>((set, get) => ({
+    activeWorktreeByProjectId: {},
     selection: { type: "section", section: "working", index: 0 },
     searchValue: "",
     searchFocused: false,
@@ -125,6 +134,21 @@ function createDashboardStore() {
               selection: { type: "section", section: "working", index: 0 },
             },
       ),
+    setActiveWorktreeDirectory: (projectId, directory) =>
+      set((state) => {
+        if (state.activeWorktreeByProjectId[projectId] === directory) return state
+        const activeWorktreeByProjectId = { ...state.activeWorktreeByProjectId }
+        if (directory) activeWorktreeByProjectId[projectId] = directory
+        else delete activeWorktreeByProjectId[projectId]
+        if (state.activeTabId !== projectId) return { activeWorktreeByProjectId }
+
+        return {
+          activeWorktreeByProjectId,
+          visualMode: false,
+          selectedSessionIds: new Set(),
+          selection: { type: "section", section: "working", index: 0 },
+        }
+      }),
     setSelection: (selection) =>
       set((state) =>
         state.selection.section === selection.section &&
@@ -135,13 +159,20 @@ function createDashboardStore() {
           : { selection },
       ),
     setSearchValue: (searchValue) =>
-      set((state) => ({
-        searchValue,
-        selectedSessionIds: retainSelectedSessionIds(
-          state.selectedSessionIds,
-          visibleSessionIds(state.rowsByProjectId[state.activeTabId ?? ""] ?? [], searchValue),
-        ),
-      })),
+      set((state) => {
+        const activeProjectId = state.activeTabId ?? ""
+        return {
+          searchValue,
+          selectedSessionIds: retainSelectedSessionIds(
+            state.selectedSessionIds,
+            visibleSessionIds(
+              state.rowsByProjectId[activeProjectId] ?? [],
+              searchValue,
+              state.activeWorktreeByProjectId[activeProjectId],
+            ),
+          ),
+        }
+      }),
     setSearchFocused: (searchFocused) => set({ searchFocused }),
     bumpSearchClearVersion: () => set((state) => ({ searchClearVersion: state.searchClearVersion + 1 })),
     openAddSessionDialog: (addSessionDialog) => set({ addSessionDialog }),
@@ -232,6 +263,18 @@ function createDashboardStore() {
     bumpAddSessionClearVersion: () => set((state) => ({ addSessionClearVersion: state.addSessionClearVersion + 1 })),
     openDeleteWorktreeDialog: (deleteWorktreeDialog) => set({ deleteWorktreeDialog }),
     closeDeleteWorktreeDialog: () => set({ deleteWorktreeDialog: undefined }),
+    openPermissionDialog: (permissionDialog) => set({ permissionDialog, promptDialog: undefined }),
+    closePermissionDialog: () => set({ permissionDialog: undefined }),
+    setPermissionResponding: () =>
+      set((state) => ({
+        permissionDialog: state.permissionDialog
+          ? omitPermissionError({ ...state.permissionDialog, responding: true })
+          : undefined,
+      })),
+    setPermissionError: (error) =>
+      set((state) => ({
+        permissionDialog: state.permissionDialog ? { ...state.permissionDialog, responding: false, error } : undefined,
+      })),
     openPromptDialog: (promptDialog) => set({ promptDialog }),
     closePromptDialog: () => set({ promptDialog: undefined }),
     setPromptValue: (value) =>
@@ -324,24 +367,41 @@ function createDashboardStore() {
       set((state) => {
         if (state.rowsByProjectId[projectId] === rows) return state
         const rowsByProjectId = { ...state.rowsByProjectId, [projectId]: rows }
+        const permissionRow = state.permissionDialog
+          ? rows.find((row) => row.id === state.permissionDialog?.row.id)
+          : undefined
+        const permissionRequest = permissionRow?.pendingPermissionRequests.find(
+          (request) => request.id === state.permissionDialog?.request.id,
+        )
+        const permissionDialog =
+          state.permissionDialog && permissionRow
+            ? {
+                ...state.permissionDialog,
+                row: permissionRow,
+                request: permissionRequest ?? state.permissionDialog.request,
+              }
+            : state.permissionDialog
         const promptRow = state.promptDialog ? rows.find((row) => row.id === state.promptDialog?.row.id) : undefined
         const promptDialog =
           state.promptDialog && promptRow ? { ...state.promptDialog, row: promptRow } : state.promptDialog
-        if (state.activeTabId !== projectId) return { rowsByProjectId, promptDialog }
+        if (state.activeTabId !== projectId) return { rowsByProjectId, permissionDialog, promptDialog }
 
         return {
           rowsByProjectId,
+          permissionDialog,
           promptDialog,
           selectedSessionIds: retainSelectedSessionIds(
             state.selectedSessionIds,
-            visibleSessionIds(rows, state.searchValue),
+            visibleSessionIds(rows, state.searchValue, state.activeWorktreeByProjectId[projectId]),
           ),
         }
       }),
     clearRowsByProject: () =>
       set({
         activeTabId: undefined,
+        activeWorktreeByProjectId: {},
         rowsByProjectId: {},
+        permissionDialog: undefined,
         visualMode: false,
         selectedSessionIds: new Set(),
         selection: { type: "section", section: "working", index: 0 },
@@ -393,8 +453,18 @@ function retainSelectedSessionIds(current: ReadonlySet<string>, visibleIds: Read
   return next.size === current.size ? current : next
 }
 
-function visibleSessionIds(rows: SessionRow[], searchValue: string): ReadonlySet<string> {
-  return new Set(rows.filter((row) => fuzzySessionMatch(row, searchValue)).map((row) => row.id))
+function visibleSessionIds(
+  rows: SessionRow[],
+  searchValue: string,
+  worktreeDirectory: string | undefined,
+): ReadonlySet<string> {
+  return new Set(
+    rows
+      .filter(
+        (row) => (!worktreeDirectory || row.directory === worktreeDirectory) && fuzzySessionMatch(row, searchValue),
+      )
+      .map((row) => row.id),
+  )
 }
 
 function fuzzySessionMatch(row: SessionRow, query: string): boolean {
@@ -428,6 +498,14 @@ function omitAddSessionError(state: AddSessionDialogState): AddSessionDialogStat
     focus: state.focus,
     value: state.value,
     sending: state.sending,
+  }
+}
+
+function omitPermissionError(state: PermissionDialogState): PermissionDialogState {
+  return {
+    row: state.row,
+    request: state.request,
+    ...(state.responding !== undefined ? { responding: state.responding } : {}),
   }
 }
 

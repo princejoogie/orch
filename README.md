@@ -138,7 +138,7 @@ Settings page:
 
 ## How It Works
 
-`orch` talks to opencode through `@opencode-ai/sdk`. It lists projects and project worktrees through the SDK, then loads sessions from the last week, statuses, latest messages, and context usage only for the selected project.
+`orch` talks to opencode through `@opencode-ai/sdk`. It lists projects and project worktrees through the SDK, then loads sessions from the last week, statuses, pending permission requests, latest messages, and context usage only for the selected project.
 
 Sessions are grouped into project tabs and lanes:
 

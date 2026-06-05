@@ -16,6 +16,7 @@ const row = (id: string, status: SessionRow["status"]): SessionRow => ({
   latestUserMessage: "",
   messages: [],
   hasMoreMessages: false,
+  pendingPermissionRequests: [],
   directory: "/tmp",
   projectID: "project",
   projectTitle: "Project",
@@ -102,5 +103,22 @@ describe("lane filtering", () => {
     expect(rowInLane(justInsideWindow, "needs-input", now)).toBe(true)
     expect(rowInLane(atWindow, "needs-input", now)).toBe(false)
     expect(rowInLane(atWindow, "completed", now)).toBe(true)
+  })
+
+  test("rows with pending permissions need input even while working", () => {
+    const now = 0
+    const pendingPermission = row("permission", "working")
+    pendingPermission.pendingPermissionRequests = [
+      {
+        id: "perm_1",
+        sessionID: pendingPermission.id,
+        permission: "bash",
+        patterns: ["git status"],
+        summary: "Permission requested: bash git status",
+      },
+    ]
+
+    expect(rowInLane(pendingPermission, "needs-input", now)).toBe(true)
+    expect(rowInLane(pendingPermission, "working", now)).toBe(false)
   })
 })
