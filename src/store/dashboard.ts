@@ -189,6 +189,19 @@ function createDashboardStore() {
       set((state) => {
         if (!state.addSessionDialog) return { addSessionDialog: undefined }
         if (state.addSessionDialog.worktreeIndex === worktreeIndex) return state
+        const currentContext = addSessionModelContext(state.addSessionDialog, state.addSessionDialog.worktreeIndex)
+        const nextContext = addSessionModelContext(state.addSessionDialog, worktreeIndex)
+        if (
+          currentContext.directory === nextContext.directory &&
+          currentContext.workspaceID === nextContext.workspaceID
+        ) {
+          return {
+            addSessionDialog: {
+              ...state.addSessionDialog,
+              worktreeIndex,
+            },
+          }
+        }
         return {
           addSessionDialog: {
             ...state.addSessionDialog,
@@ -464,6 +477,18 @@ function sameSelection(left: Selection, right: Selection): boolean {
     left.index === right.index &&
     left.sessionId === right.sessionId
   )
+}
+
+function addSessionModelContext(
+  state: AddSessionDialogState,
+  worktreeIndex: number,
+): { directory: string; workspaceID?: string | undefined } {
+  const worktree = state.worktrees[worktreeIndex]
+  const workspaceID = worktree ? worktree.workspaceID : state.workspaceID
+  return {
+    directory: worktree?.directory ?? state.projectDirectory,
+    ...(workspaceID !== undefined ? { workspaceID } : {}),
+  }
 }
 
 function toggledSessionIds(current: ReadonlySet<string>, sessionId: string): ReadonlySet<string> {

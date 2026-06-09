@@ -1,6 +1,7 @@
 import { TextAttributes, type KeyBinding, type MouseEvent, type TextareaRenderable } from "@opentui/core"
 import { useEffect, useRef, type ReactNode } from "react"
 import { mouseAction } from "./button.tsx"
+import { centeredTopWithinScreen } from "../../lib/layout.ts"
 import { truncate, type WrappedLine } from "../../lib/utils.ts"
 import { theme } from "../../theme.ts"
 
@@ -45,7 +46,7 @@ export function Dialog({ screenWidth, screenHeight, width, height, danger, child
         position: "absolute",
         zIndex: 20,
         left: Math.max(1, Math.floor((screenWidth - width) / 2)),
-        top: Math.max(1, Math.floor((screenHeight - height) / 2)),
+        top: centeredTopWithinScreen(screenHeight, height),
         width,
         height,
         border: true,
@@ -140,6 +141,7 @@ export function ModalFrame({
   height,
   junctionRows = [],
   topJunctionColumns = [],
+  background = DIALOG_BACKGROUND,
   onClose,
 }: {
   children: ReactNode
@@ -149,6 +151,7 @@ export function ModalFrame({
   height: number
   junctionRows?: readonly number[]
   topJunctionColumns?: readonly number[]
+  background?: string | undefined
   onClose?: (() => void) | undefined
 }) {
   const innerWidth = Math.max(1, width - 2)
@@ -167,7 +170,7 @@ export function ModalFrame({
         width,
         height,
         flexDirection: "column",
-        backgroundColor: DIALOG_BACKGROUND,
+        backgroundColor: background,
       }}
       onMouseDown={mouseAction}
     >
@@ -258,7 +261,7 @@ export function SearchDialogFrame({
   children: ReactNode
 }) {
   const left = Math.max(1, Math.floor((screenWidth - width) / 2))
-  const top = Math.max(1, Math.floor((screenHeight - height) / 2))
+  const top = centeredTopWithinScreen(screenHeight, height)
   const innerWidth = Math.max(16, width - 2)
   const contentWidth = Math.max(14, innerWidth - 2)
   const bodyHeight = Math.max(1, height - 6)
@@ -341,7 +344,7 @@ export function StandardDialogFrame({
   children: ReactNode
 }) {
   const left = Math.max(1, Math.floor((screenWidth - width) / 2))
-  const top = Math.max(1, Math.floor((screenHeight - height) / 2))
+  const top = centeredTopWithinScreen(screenHeight, height)
   const innerWidth = Math.max(16, width - 2)
   const contentWidth = Math.max(14, innerWidth - 2)
   const hasSubtitle = subtitle !== undefined && subtitle !== null && subtitle !== false

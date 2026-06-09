@@ -2,6 +2,7 @@ import { TextAttributes } from "@opentui/core"
 import { useNow } from "../hooks/use-now.ts"
 import {
   formatAge,
+  displayWorktreeName,
   preview,
   rowElementId,
   sectionElementId,
@@ -21,8 +22,8 @@ function tableLayout(width: number) {
   const availableWidth = Math.max(4, width - 2 - gap * 4)
   const variableWidth = Math.max(3, availableWidth - ageWidth - contextWidth)
   const titleWidth = Math.min(48, Math.max(8, Math.floor(variableWidth * 0.38)))
-  const worktreeWidth = Math.min(28, Math.max(8, Math.floor(variableWidth * 0.22)))
-  const messageWidth = Math.max(3, variableWidth - titleWidth - worktreeWidth)
+  const messageWidth = Math.min(28, Math.max(8, Math.floor(variableWidth * 0.22)))
+  const worktreeWidth = Math.max(3, variableWidth - titleWidth - messageWidth)
   return { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap: " ".repeat(gap) }
 }
 
@@ -168,6 +169,8 @@ function SessionItem({
   const now = useNow(80)
   const { titleWidth, messageWidth, worktreeWidth, contextWidth, ageWidth, gap } = tableLayout(width)
   const worktreeColor = worktreeColors[row.worktreeName] ?? theme.textMuted
+  const worktreeName = displayWorktreeName(row.worktreeName)
+  const hasResponseError = row.pendingPermissionRequests.length === 0 && Boolean(row.latestResponseError)
   const backgroundColor = selected
     ? theme.backgroundElement
     : checked
@@ -207,12 +210,12 @@ function SessionItem({
       <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
       <text
         content={truncate(preview(row.latestMessage), messageWidth).padEnd(messageWidth)}
-        style={{ fg: selected ? theme.text : theme.textMuted }}
+        style={{ fg: hasResponseError ? theme.error : selected ? theme.text : theme.textMuted }}
       />
       <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
       <text content="● " style={{ fg: worktreeColor }} />
       <text
-        content={truncate(row.worktreeName, Math.max(1, worktreeWidth - 2)).padEnd(worktreeWidth - 2)}
+        content={truncate(worktreeName, Math.max(1, worktreeWidth - 2)).padEnd(worktreeWidth - 2)}
         style={{ fg: selected ? theme.text : theme.textMuted }}
       />
       <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />
@@ -243,6 +246,7 @@ function sectionMarkerColor(status: LaneStatus): string {
 
 function rowMarkerColor(row: SessionRow, status: LaneStatus): string {
   if (row.pendingPermissionRequests.length > 0) return theme.warning
+  if (row.latestResponseError) return theme.error
   return sectionMarkerColor(status)
 }
 
@@ -253,5 +257,6 @@ function sectionMarker(section: Section, now: Date): string {
 
 function rowMarker(row: SessionRow, section: Section, now: Date): string {
   if (row.pendingPermissionRequests.length > 0) return "△"
+  if (row.latestResponseError) return "×"
   return sectionMarker(section, now)
 }

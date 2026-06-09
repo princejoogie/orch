@@ -6,6 +6,7 @@ export type SessionHistoryMessage = {
   text: string
   queued?: boolean | undefined
   permissionRequested?: boolean | undefined
+  responseError?: boolean | undefined
 }
 
 export type SessionPermissionRequest = {
@@ -33,6 +34,7 @@ export type SessionRow = {
   title: string
   latestMessage: string
   latestUserMessage: string
+  latestResponseError?: string | undefined
   messages: SessionHistoryMessage[]
   hasMoreMessages: boolean
   pendingPermissionRequests: SessionPermissionRequest[]

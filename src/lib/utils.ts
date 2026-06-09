@@ -168,6 +168,10 @@ export function preview(value: string): string {
   return value.replace(/\s+/g, " ").trim() || "No message yet."
 }
 
+export function displayWorktreeName(name: string): string {
+  return name.startsWith("opencode/") ? name.slice("opencode/".length) : name
+}
+
 export function wrapText(
   value: string,
   width: number,

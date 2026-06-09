@@ -1,4 +1,5 @@
 import { TextAttributes } from "@opentui/core"
+import { topWithinScreen } from "../../lib/layout.ts"
 import { theme } from "../../theme.ts"
 import { mouseAction } from "./button.tsx"
 import { ModalFrame, TextLine, fitCell } from "./dialog.tsx"
@@ -17,10 +18,14 @@ export function MenuDropdown({
   top,
   items,
   selectedIndex,
+  screenHeight,
   visibleStart = 0,
   visibleCount = items.length,
   maxWidth,
   showShortcuts = true,
+  background,
+  selectedBackground,
+  selectOnHover = true,
   onSelect,
   onClose,
 }: {
@@ -28,19 +33,24 @@ export function MenuDropdown({
   top: number
   items: readonly MenuItem[]
   selectedIndex: number
+  screenHeight?: number | undefined
   visibleStart?: number | undefined
   visibleCount?: number | undefined
   maxWidth?: number | undefined
   showShortcuts?: boolean | undefined
+  background?: string | undefined
+  selectedBackground?: string | undefined
+  selectOnHover?: boolean | undefined
   onSelect: (index: number) => void
   onClose: () => void
 }) {
   const innerWidth = menuListWidth(items, showShortcuts, maxWidth ? Math.max(1, maxWidth - 2) : undefined)
   const width = innerWidth + 2
   const height = items.slice(visibleStart, visibleStart + visibleCount).length + 2
+  const frameTop = screenHeight === undefined ? top : topWithinScreen(top, height, screenHeight)
 
   return (
-    <ModalFrame left={left} top={top} width={width} height={height}>
+    <ModalFrame left={left} top={frameTop} width={width} height={height} background={background}>
       <MenuList
         items={items}
         selectedIndex={selectedIndex}
@@ -48,6 +58,9 @@ export function MenuDropdown({
         visibleCount={visibleCount}
         width={innerWidth}
         showShortcuts={showShortcuts}
+        background={background}
+        selectedBackground={selectedBackground}
+        selectOnHover={selectOnHover}
         onSelect={onSelect}
         onClose={onClose}
       />
@@ -62,6 +75,9 @@ export function MenuList({
   visibleCount = items.length,
   width,
   showShortcuts = true,
+  background,
+  selectedBackground,
+  selectOnHover = true,
   onSelect,
   onClose = () => {},
 }: {
@@ -71,6 +87,9 @@ export function MenuList({
   visibleCount?: number | undefined
   width?: number | undefined
   showShortcuts?: boolean | undefined
+  background?: string | undefined
+  selectedBackground?: string | undefined
+  selectOnHover?: boolean | undefined
   onSelect: (index: number) => void
   onClose?: (() => void) | undefined
 }) {
@@ -92,6 +111,9 @@ export function MenuList({
             shortcutWidth={shortcutWidth}
             showShortcut={showShortcuts}
             width={rowWidth}
+            background={background}
+            selectedBackground={selectedBackground}
+            selectOnHover={selectOnHover}
             onSelect={() => onSelect(index)}
             onClose={onClose}
           />
@@ -116,6 +138,9 @@ function MenuDropdownItem({
   shortcutWidth,
   showShortcut,
   width,
+  background,
+  selectedBackground,
+  selectOnHover,
   onSelect,
   onClose,
 }: {
@@ -125,17 +150,22 @@ function MenuDropdownItem({
   shortcutWidth: number
   showShortcut: boolean
   width: number
+  background?: string | undefined
+  selectedBackground?: string | undefined
+  selectOnHover: boolean
   onSelect: () => void
   onClose: () => void
 }) {
   const disabled = Boolean(item.disabled)
   const fg = disabled ? theme.border : item.danger ? theme.error : theme.text
-  const bg = selected ? (item.background ?? theme.backgroundElement) : item.background
+  const bg = selected
+    ? (selectedBackground ?? item.background ?? theme.backgroundElement)
+    : (item.background ?? background)
 
   return (
     <box
       style={{ height: 1, width }}
-      onMouseOver={onSelect}
+      {...(selectOnHover ? { onMouseOver: onSelect } : {})}
       onMouseDown={(event) => {
         mouseAction(event)
         onSelect()

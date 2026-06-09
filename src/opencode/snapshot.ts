@@ -132,7 +132,13 @@ export async function getProjectSessions(options: {
 type StatusMap = Record<string, OpencodeSessionStatus>
 type SessionDetails = Pick<
   SessionRow,
-  "latestMessage" | "latestUserMessage" | "messages" | "hasMoreMessages" | "contextTokens" | "contextPercent"
+  | "latestMessage"
+  | "latestUserMessage"
+  | "latestResponseError"
+  | "messages"
+  | "hasMoreMessages"
+  | "contextTokens"
+  | "contextPercent"
 >
 type GitWorktree = {
   directory: string
@@ -320,6 +326,9 @@ async function loadSessionDetails(
           {
             latestMessage: messages.assistantMessage,
             latestUserMessage: messages.userMessage,
+            ...(messages.latestResponseError !== undefined
+              ? { latestResponseError: messages.latestResponseError }
+              : {}),
             messages: messages.messages,
             hasMoreMessages: messages.hasMore,
             ...(context.tokens !== undefined ? { contextTokens: context.tokens } : {}),

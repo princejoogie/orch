@@ -30,6 +30,7 @@ export function AppMenus({
         <MenuDropdown
           left={0}
           top={TOP_BAR_HEIGHT}
+          screenHeight={screenHeight}
           items={controller.actionsMenuItems}
           selectedIndex={globalStore.selectedMenuIndex}
           onSelect={globalStore.setSelectedMenuIndex}
@@ -51,6 +52,7 @@ export function AppMenus({
         <MenuDropdown
           left={10}
           top={TOP_BAR_HEIGHT}
+          screenHeight={screenHeight}
           items={controller.selectedMenuItems}
           selectedIndex={globalStore.selectedMenuIndex}
           onSelect={globalStore.setSelectedMenuIndex}
@@ -72,6 +74,7 @@ export function AppMenus({
         <MenuDropdown
           left={serverSelectorLeft}
           top={serverSelectorTop + 1}
+          screenHeight={screenHeight}
           items={controller.serverMenuItems}
           selectedIndex={globalStore.selectedMenuIndex}
           onSelect={globalStore.setSelectedMenuIndex}

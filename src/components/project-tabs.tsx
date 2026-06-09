@@ -1,7 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import { useState } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { countLane, tabElementId, truncate } from "../lib/utils.ts"
+import { countLane, displayWorktreeName, tabElementId, truncate } from "../lib/utils.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
 
@@ -100,5 +100,5 @@ export function ProjectTabs({ width }: { width: number }) {
 
 function worktreeLine(name: string, active: boolean, width: number): string {
   const prefix = active ? "  > " : "    "
-  return truncate(`${prefix}${name}`, width).padEnd(width)
+  return truncate(`${prefix}${displayWorktreeName(name)}`, width).padEnd(width)
 }

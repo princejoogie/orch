@@ -96,7 +96,7 @@ Prompt textareas use explicit key bindings:
 
 Prompt submission is an app-level decision, so textarea submit semantics are explicit instead of inherited from the renderer default.
 
-The prompt-session dialog shows previous session messages in a tall scrollable section above the textarea. Messages are grouped by contiguous role with `● User:` or `● Assistant:` headers, use distinct bullet colors per role, give user message blocks a subtle background, and separate individual messages with a blank line. The textarea keeps focus for typing; opening the dialog loads the selected session's full message history, the message section starts at the newest messages, and mouse-wheel scrolling stays scrollbox-owned. A user message with no assistant response linked yet renders as `User (queued)`.
+The prompt-session dialog shows previous session messages in a scrollable section above the textarea. Messages are grouped by contiguous role with `● User:` or `● Assistant:` headers, use distinct bullet colors per role, give user message blocks a subtle background, and separate individual messages with a blank line. Assistant response failures render as `Assistant error` blocks. The textarea keeps focus for typing; opening the dialog loads the selected session's full message history, the message section starts at the newest messages, and mouse-wheel scrolling stays scrollbox-owned. A user message with no assistant response linked yet renders as `User (queued)`. On short terminals, the message section shrinks before the input area so the prompt textarea remains visible.
 
 Prompt-session model/provider options, default model lookup, and full message history are queried by the mounted prompt dialog component, not by the dashboard controller.
 
@@ -116,4 +116,6 @@ Opening a new session from a selected row seeds the row's worktree and model/var
 - `enter` commits the selected worktree and returns focus to the prompt textarea.
 - `dd` opens a destructive confirmation dialog for the selected non-primary worktree while the worktree selector is focused. The confirmation uses the same `enter`/`y` confirm and `esc`/`n` cancel keys as deleting a session.
 - The first worktree selector option is `+ New worktree`, but opening the dialog still selects the current worktree by default. Selecting it only marks the pending choice, and the worktree is created when the message is sent.
+- Hovering worktree dropdown rows does not change the pending worktree. Click or keyboard navigation commits the pending selection, so moving the mouse over `+ New worktree` does not reset model/provider state.
+- Selector dropdowns shift upward when their bottom edge would exceed terminal height; staying visible is preferred over staying anchored below the selector.
 - Printable keys are not captured by worktree navigation while the prompt textarea is focused.

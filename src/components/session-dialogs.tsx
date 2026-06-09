@@ -9,12 +9,21 @@ import {
   HintRow,
   PlainLine,
   StandardDialogFrame,
+  standardDialogBodyHeight,
   TextLine,
 } from "./ui/dialog.tsx"
 import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
 import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { clamp, errorMessage, wrapText, type ModelProviderOption, type WorktreeOption } from "../lib/utils.ts"
+import {
+  clamp,
+  displayWorktreeName,
+  errorMessage,
+  wrapText,
+  type ModelProviderOption,
+  type WorktreeOption,
+} from "../lib/utils.ts"
+import { centeredTopWithinScreen, preferredPromptSessionBodyHeight, promptSessionBodyLayout } from "../lib/layout.ts"
 import {
   loadDefaultModel,
   loadModelProviders,
@@ -33,11 +42,14 @@ type PromptHistoryLine = {
   roleLabel?: string | undefined
   queued?: boolean | undefined
   permissionRequested?: boolean | undefined
+  responseError?: boolean | undefined
 }
 
 const PROMPT_USER_BULLET = theme.primary
 const PROMPT_ASSISTANT_BULLET = theme.info
 const PROMPT_USER_BACKGROUND = theme.backgroundElement
+const SELECTOR_DROPDOWN_BACKGROUND = theme.backgroundElement
+const SELECTOR_DROPDOWN_SELECTED_BACKGROUND = theme.backgroundElementActive
 
 export function PromptDialog({ width, height }: { width: number; height: number }) {
   const controller = useDashboardControllerContext()
@@ -139,24 +151,23 @@ export function PromptDialog({ width, height }: { width: number; height: number 
   if (!state) return null
 
   const dialogWidth = Math.min(Math.max(48, Math.floor(width * 0.7)), 80, width - 4)
-  const inputHeight = 5
-  const selectorFooterHeight = 1
-  const labelHeight = 1
   const modelLoadError = modelProvidersQuery.error
     ? errorMessage(modelProvidersQuery.error)
     : defaultModelQuery.error
       ? errorMessage(defaultModelQuery.error)
       : undefined
   const dialogError = state.error ?? modelLoadError
-  const historyHeight = clamp(height - (dialogError ? 24 : 23), 8, 24)
-  const historyBlockHeight = historyHeight + 1
-  const inputBlockHeight = inputHeight + 3 + selectorFooterHeight
+  const dialogHeight = Math.max(1, Math.min(height - 2, preferredPromptSessionBodyHeight(Boolean(dialogError)) + 7))
+  const promptLayout = promptSessionBodyLayout(standardDialogBodyHeight(dialogHeight), Boolean(dialogError))
+  const historyBlockHeight =
+    promptLayout.historyLabelHeight + promptLayout.historyHeight + promptLayout.historyMarginBottom
   const modelProviderSelectorFocused = state.focus === "model-provider"
   const modelSelectorFocused = state.focus === "model"
   const variantSelectorFocused = state.focus === "variant"
   const modelSelectorActive = modelProviderSelectorFocused || modelSelectorFocused
+  const selectorVisible = promptLayout.selectorFooterHeight > 0
+  const selectorNavigationActive = selectorVisible && (modelSelectorActive || variantSelectorFocused)
   const selectorWidth = Math.max(1, dialogWidth - 4)
-  const bodyHeight = labelHeight + historyBlockHeight + inputBlockHeight + (dialogError ? 1 : 0)
   const historyLineWidth = dialogWidth - 8
   const historyMessages = historyQuery.data ?? withoutQueuedMarkers(state.row.messages)
   const historyLines = historyQuery.isPending
@@ -167,10 +178,9 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           : []),
         ...promptHistoryLines(historyMessages, historyLineWidth),
       ]
-  const dialogHeight = Math.min(height - 2, bodyHeight + 7)
+  const dialogTop = centeredTopWithinScreen(height, dialogHeight)
   const modelSelectorLeft = Math.max(1, Math.floor((width - dialogWidth) / 2)) + 2
-  const modelSelectorTop =
-    Math.max(1, Math.floor((height - dialogHeight) / 2)) + 4 + labelHeight + historyBlockHeight + 1 + inputHeight
+  const modelSelectorTop = dialogTop + 4 + historyBlockHeight + 1 + promptLayout.inputHeight
   const variantSelectorLeft = modelSelectorLeft
   const variantSelectorTop = modelSelectorTop
   const selectedProvider = state.modelProviders[state.modelProviderIndex]
@@ -242,7 +252,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
                   {
                     key: "j/k",
                     label: variantSelectorFocused ? "variant" : "model",
-                    when: modelSelectorActive || variantSelectorFocused,
+                    when: selectorNavigationActive,
                     disabled: variantSelectorFocused ? variantOptionCount <= 1 : modelOptionCount <= 1,
                   },
                   { key: "shift-enter", label: "newline" },
@@ -264,55 +274,62 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           </DialogFooterActions>
         }
       >
-        <box style={{ height: labelHeight }}>
-          <DialogLabel>Messages:</DialogLabel>
-        </box>
-        <scrollbox
-          focusable={false}
-          style={{
-            contentOptions: { flexDirection: "column" },
-            height: historyHeight,
-            marginBottom: 1,
-            paddingLeft: 1,
-            paddingRight: 1,
-            scrollX: false,
-            scrollY: true,
-            stickyScroll: true,
-            stickyStart: "bottom",
-            verticalScrollbarOptions: { showArrows: false },
-            viewportCulling: true,
-          }}
-        >
-          {historyLines.map((line) => (
-            <PromptHistoryText key={line.key} line={line} width={historyLineWidth} />
-          ))}
-        </scrollbox>
+        {promptLayout.historyLabelHeight > 0 ? (
+          <box style={{ height: promptLayout.historyLabelHeight }}>
+            <DialogLabel>Messages:</DialogLabel>
+          </box>
+        ) : null}
+        {promptLayout.historyHeight > 0 ? (
+          <scrollbox
+            focusable={false}
+            style={{
+              contentOptions: { flexDirection: "column" },
+              height: promptLayout.historyHeight,
+              marginBottom: promptLayout.historyMarginBottom,
+              paddingLeft: 1,
+              paddingRight: 1,
+              scrollX: false,
+              scrollY: true,
+              stickyScroll: true,
+              stickyStart: "bottom",
+              verticalScrollbarOptions: { showArrows: false },
+              viewportCulling: true,
+            }}
+          >
+            {historyLines.map((line) => (
+              <PromptHistoryText key={line.key} line={line} width={historyLineWidth} />
+            ))}
+          </scrollbox>
+        ) : null}
         <DialogTextarea
           value={state.value}
           placeholder={state.sending ? "Sending..." : "Type prompt"}
-          focused={!state.sending && state.focus === "input"}
-          height={inputHeight}
+          focused={!state.sending && (state.focus === "input" || !selectorVisible)}
+          height={promptLayout.inputHeight}
           footer={
-            <ModelVariantFooter
-              width={Math.max(1, selectorWidth - 2)}
-              providerName={selectedProvider?.name}
-              modelName={selectedModel?.name}
-              variant={selectedVariant}
-              active={
-                modelProviderSelectorFocused
-                  ? "provider"
-                  : modelSelectorFocused
-                    ? "model"
-                    : variantSelectorFocused
-                      ? "variant"
-                      : undefined
-              }
-              onProviderFocus={() => dashboardStore.setPromptFocus("model-provider")}
-              onModelFocus={() => dashboardStore.setPromptFocus("model")}
-              onVariantFocus={() => dashboardStore.setPromptFocus("variant")}
-            />
+            selectorVisible ? (
+              <ModelVariantFooter
+                width={Math.max(1, selectorWidth - 2)}
+                providerName={selectedProvider?.name}
+                modelName={selectedModel?.name}
+                variant={selectedVariant}
+                active={
+                  modelProviderSelectorFocused
+                    ? "provider"
+                    : modelSelectorFocused
+                      ? "model"
+                      : variantSelectorFocused
+                        ? "variant"
+                        : undefined
+                }
+                onProviderFocus={() => dashboardStore.setPromptFocus("model-provider")}
+                onModelFocus={() => dashboardStore.setPromptFocus("model")}
+                onVariantFocus={() => dashboardStore.setPromptFocus("variant")}
+              />
+            ) : undefined
           }
-          footerHeight={selectorFooterHeight}
+          footerHeight={promptLayout.selectorFooterHeight}
+          marginBottom={0}
           clearVersion={dashboardStore.promptClearVersion}
           onFocus={() => dashboardStore.setPromptFocus("input")}
           onInput={dashboardStore.setPromptValue}
@@ -320,16 +337,19 @@ export function PromptDialog({ width, height }: { width: number; height: number 
         />
         <DialogError error={dialogError} width={dialogWidth} />
       </StandardDialogFrame>
-      {modelSelectorActive && modelMenuItems.length > 0 ? (
+      {selectorVisible && modelSelectorActive && modelMenuItems.length > 0 ? (
         <MenuDropdown
           left={modelSelectorLeft}
           top={modelSelectorTop + 1}
+          screenHeight={height}
           items={modelMenuItems}
           selectedIndex={selectedModelMenuIndex}
           visibleStart={modelVisibleStart}
           visibleCount={modelVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
+          background={SELECTOR_DROPDOWN_BACKGROUND}
+          selectedBackground={SELECTOR_DROPDOWN_SELECTED_BACKGROUND}
           onSelect={(index) => {
             if (modelProviderSelectorFocused) dashboardStore.setPromptModelProviderIndex(index)
             else dashboardStore.setPromptModelIndex(index)
@@ -337,16 +357,19 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           onClose={() => dashboardStore.setPromptFocus("input")}
         />
       ) : null}
-      {variantSelectorFocused && variantMenuItems.length > 0 ? (
+      {selectorVisible && variantSelectorFocused && variantMenuItems.length > 0 ? (
         <MenuDropdown
           left={variantSelectorLeft}
           top={variantSelectorTop + 1}
+          screenHeight={height}
           items={variantMenuItems}
           selectedIndex={state.variantIndex}
           visibleStart={variantVisibleStart}
           visibleCount={variantVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
+          background={SELECTOR_DROPDOWN_BACKGROUND}
+          selectedBackground={SELECTOR_DROPDOWN_SELECTED_BACKGROUND}
           onSelect={(index) => dashboardStore.setPromptVariantIndex(index)}
           onClose={() => dashboardStore.setPromptFocus("input")}
         />
@@ -363,9 +386,11 @@ function PromptHistoryText({ line, width }: { line: PromptHistoryLine; width: nu
       ? theme.warning
       : line.permissionRequested
         ? theme.warning
-        : line.role === "user"
-          ? PROMPT_USER_BULLET
-          : PROMPT_ASSISTANT_BULLET
+        : line.responseError
+          ? theme.error
+          : line.role === "user"
+            ? PROMPT_USER_BULLET
+            : PROMPT_ASSISTANT_BULLET
     const rest = ` ${line.roleLabel}:`
     const padding = " ".repeat(Math.max(0, width - 1 - rest.length))
 
@@ -378,7 +403,12 @@ function PromptHistoryText({ line, width }: { line: PromptHistoryLine; width: nu
     )
   }
 
-  return <text content={fitCell(line.text, width)} style={{ fg: theme.textMuted, ...(bg ? { bg } : {}) }} />
+  return (
+    <text
+      content={fitCell(line.text, width)}
+      style={{ fg: line.responseError ? theme.error : theme.textMuted, ...(bg ? { bg } : {}) }}
+    />
+  )
 }
 
 function promptHistoryLines(messages: SessionHistoryMessage[], width: number): PromptHistoryLine[] {
@@ -390,28 +420,33 @@ function promptHistoryLines(messages: SessionHistoryMessage[], width: number): P
       text: line.text,
       role: message.role,
       permissionRequested: message.permissionRequested,
+      responseError: message.responseError,
     }))
     const previousMessage = messages[index - 1]
     const showRole =
       !previousMessage ||
       previousMessage.role !== message.role ||
       previousMessage.queued !== message.queued ||
-      previousMessage.permissionRequested !== message.permissionRequested
+      previousMessage.permissionRequested !== message.permissionRequested ||
+      previousMessage.responseError !== message.responseError
     const roleLine = showRole
       ? [
           {
             key: `${index}:role`,
             text: "",
             role: message.role,
-            roleLabel: message.permissionRequested
-              ? "Permission requested"
-              : message.role === "user"
-                ? message.queued
-                  ? "User (queued)"
-                  : "User"
-                : "Assistant",
+            roleLabel: message.responseError
+              ? "Assistant error"
+              : message.permissionRequested
+                ? "Permission requested"
+                : message.role === "user"
+                  ? message.queued
+                    ? "User (queued)"
+                    : "User"
+                  : "Assistant",
             queued: message.queued,
             permissionRequested: message.permissionRequested,
+            responseError: message.responseError,
           },
         ]
       : []
@@ -443,9 +478,17 @@ export function PermissionDialog({ width, height }: { width: number; height: num
     return { key: `${pattern}:${count}`, pattern }
   })
   const hiddenPatternCount = Math.max(0, state.request.patterns.length - visiblePatterns.length)
-  const patternLineCount = Math.max(1, visiblePatterns.length) + (hiddenPatternCount > 0 ? 1 : 0)
-  const bodyHeight = 4 + patternLineCount + (state.error ? 1 : 0)
-  const dialogHeight = Math.min(height - 2, bodyHeight + 7)
+  const hasMultipleTargets = state.request.patterns.length > 1
+  const permissionLabel = `${state.request.permission.slice(0, 1).toUpperCase()}${state.request.permission.slice(1)}`
+  const actionLabel =
+    state.request.patterns.length === 1
+      ? `${permissionLabel} ${state.request.patterns[0]}`
+      : state.request.patterns.length > 1
+        ? `${permissionLabel} ${state.request.patterns.length} paths`
+        : permissionLabel
+  const pathLineCount = hasMultipleTargets ? 1 + visiblePatternRows.length + (hiddenPatternCount > 0 ? 1 : 0) : 1
+  const bodyHeight = 2 + pathLineCount + (state.error ? 1 : 0)
+  const dialogHeight = Math.min(height - 2, bodyHeight + 6)
   const requestIndex = state.row.pendingPermissionRequests.findIndex((request) => request.id === state.request.id)
   const requestCount = state.row.pendingPermissionRequests.length
   const footerWidth = dialogWidth - 4
@@ -464,7 +507,6 @@ export function PermissionDialog({ width, height }: { width: number; height: num
       height={dialogHeight}
       title="Permission required"
       headerRight={headerRight}
-      subtitle={<PlainLine text={fitCell(state.row.title, dialogWidth - 4)} fg={theme.textMuted} />}
       onClose={responding ? undefined : dashboardStore.closePermissionDialog}
       footer={
         <ButtonRow width={footerWidth}>
@@ -503,16 +545,19 @@ export function PermissionDialog({ width, height }: { width: number; height: num
         </ButtonRow>
       }
     >
-      <PlainLine text={fitCell(state.request.summary, bodyWidth)} fg={theme.warning} />
-      <PlainLine text={fitCell(`Permission: ${state.request.permission}`, bodyWidth)} fg={theme.text} />
-      <PlainLine text={fitCell(`Session: ${state.row.worktreeName}`, bodyWidth)} fg={theme.textMuted} />
-      <PlainLine text={state.request.patterns.length === 1 ? "Pattern:" : "Patterns:"} fg={theme.text} />
-      {visiblePatternRows.length > 0 ? (
-        visiblePatternRows.map((row) => (
-          <PlainLine key={row.key} text={fitCell(`  - ${row.pattern}`, bodyWidth)} fg={theme.textMuted} />
-        ))
+      <PlainLine text={fitCell(`→ ${actionLabel}`, bodyWidth)} fg={theme.text} />
+      <PlainLine text="" />
+      {hasMultipleTargets ? (
+        <>
+          <PlainLine text="Paths:" fg={theme.textMuted} />
+          {visiblePatternRows.map((row) => (
+            <PlainLine key={row.key} text={fitCell(`  - ${row.pattern}`, bodyWidth)} fg={theme.textMuted} />
+          ))}
+        </>
+      ) : state.request.patterns.length === 1 ? (
+        <PlainLine text={fitCell(`Path: ${state.request.patterns[0]}`, bodyWidth)} fg={theme.textMuted} />
       ) : (
-        <PlainLine text="  none" fg={theme.textMuted} />
+        <PlainLine text="Path: none" fg={theme.textMuted} />
       )}
       {hiddenPatternCount > 0 ? (
         <PlainLine text={fitCell(`  +${hiddenPatternCount} more`, bodyWidth)} fg={theme.textMuted} />
@@ -665,7 +710,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
   const bodyHeight = worktreeBlockHeight + inputBlockHeight + (dialogError ? 1 : 0)
   const dialogHeight = Math.max(1, Math.min(height - 2, bodyHeight + 6))
   const dialogLeft = Math.max(1, Math.floor((width - dialogWidth) / 2))
-  const dialogTop = Math.max(1, Math.floor((height - dialogHeight) / 2))
+  const dialogTop = centeredTopWithinScreen(height, dialogHeight)
   const worktreeSelectorLeft = dialogLeft + 2
   const worktreeSelectorTop = dialogTop + 3 + inputBlockHeight
   const modelSelectorLeft = dialogLeft + 2
@@ -690,7 +735,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
       },
     },
     ...state.worktrees.map((worktree, index) => ({
-      label: worktree.name,
+      label: displayWorktreeName(worktree.name),
       shortcut: "",
       run: () => {
         dashboardStore.setAddSessionWorktreeIndex(index)
@@ -838,12 +883,16 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         <MenuDropdown
           left={worktreeSelectorLeft}
           top={worktreeSelectorTop + 1}
+          screenHeight={height}
           items={worktreeMenuItems}
           selectedIndex={selectedDisplayWorktreeIndex}
           visibleStart={worktreeVisibleStart}
           visibleCount={worktreeVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
+          background={SELECTOR_DROPDOWN_BACKGROUND}
+          selectedBackground={SELECTOR_DROPDOWN_SELECTED_BACKGROUND}
+          selectOnHover={false}
           onSelect={(index) =>
             dashboardStore.setAddSessionWorktreeIndex(fromDisplayWorktreeIndex(index, state.worktrees.length))
           }
@@ -854,12 +903,15 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         <MenuDropdown
           left={modelSelectorLeft}
           top={modelSelectorTop + 1}
+          screenHeight={height}
           items={modelMenuItems}
           selectedIndex={selectedModelMenuIndex}
           visibleStart={modelVisibleStart}
           visibleCount={modelVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
+          background={SELECTOR_DROPDOWN_BACKGROUND}
+          selectedBackground={SELECTOR_DROPDOWN_SELECTED_BACKGROUND}
           onSelect={(index) => {
             if (modelProviderSelectorFocused) dashboardStore.setAddSessionModelProviderIndex(index)
             else dashboardStore.setAddSessionModelIndex(index)
@@ -871,12 +923,15 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
         <MenuDropdown
           left={variantSelectorLeft}
           top={variantSelectorTop + 1}
+          screenHeight={height}
           items={variantMenuItems}
           selectedIndex={state.variantIndex}
           visibleStart={variantVisibleStart}
           visibleCount={variantVisibleCount}
           maxWidth={selectorWidth}
           showShortcuts={false}
+          background={SELECTOR_DROPDOWN_BACKGROUND}
+          selectedBackground={SELECTOR_DROPDOWN_SELECTED_BACKGROUND}
           onSelect={(index) => dashboardStore.setAddSessionVariantIndex(index)}
           onClose={() => dashboardStore.setAddSessionFocus("input")}
         />
@@ -902,7 +957,7 @@ function WorktreeSelector({
 }) {
   const selected = worktrees[selectedIndex]
   const fieldWidth = Math.max(1, width)
-  const selectedName = selected?.name ?? "New worktree"
+  const selectedName = selected ? displayWorktreeName(selected.name) : "New worktree"
   const content = `Worktree: ${selectedName}`
 
   return (
@@ -1056,7 +1111,8 @@ export function DeleteSessionDialog({ width, height }: { width: number; height: 
   const firstRow = state.rows[0]
   const title = count === 1 ? "Delete session?" : `Delete ${count} sessions?`
   const subtitle = count === 1 && firstRow ? firstRow.title : `${count} selected sessions`
-  const worktree = count === 1 && firstRow ? firstRow.worktreeName : "Multiple worktrees may be affected."
+  const worktree =
+    count === 1 && firstRow ? displayWorktreeName(firstRow.worktreeName) : "Multiple worktrees may be affected."
 
   return (
     <StandardDialogFrame
@@ -1118,7 +1174,9 @@ export function DeleteWorktreeDialog({ width, height }: { width: number; height:
       danger
       title="Delete worktree?"
       headerRight="destructive"
-      subtitle={<PlainLine text={fitCell(state.worktree.name, dialogWidth - 4)} fg={theme.textMuted} />}
+      subtitle={
+        <PlainLine text={fitCell(displayWorktreeName(state.worktree.name), dialogWidth - 4)} fg={theme.textMuted} />
+      }
       onClose={dashboardStore.closeDeleteWorktreeDialog}
       footer={
         <DialogFooterActions width={dialogWidth - 4} actionsWidth={33}>
@@ -1150,7 +1208,8 @@ export function InterruptSessionDialog({ width, height }: { width: number; heigh
   const firstRow = state.rows[0]
   const title = count === 1 ? "Interrupt session?" : `Interrupt ${count} sessions?`
   const subtitle = count === 1 && firstRow ? firstRow.title : `${count} working sessions`
-  const worktree = count === 1 && firstRow ? firstRow.worktreeName : "Multiple worktrees may be affected."
+  const worktree =
+    count === 1 && firstRow ? displayWorktreeName(firstRow.worktreeName) : "Multiple worktrees may be affected."
 
   return (
     <StandardDialogFrame

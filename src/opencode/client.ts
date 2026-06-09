@@ -25,6 +25,7 @@ export function opencodeClient(serverUrl = opencodeServerUrl()) {
 export type LatestMessages = {
   userMessage: string
   assistantMessage: string
+  latestResponseError?: string | undefined
   messages: SessionHistoryMessage[]
   hasMore: boolean
   assistantInfo?: AssistantMessage | undefined
@@ -397,7 +398,9 @@ function extractLatestMessages(
 ): LatestMessages {
   let userMessage = ""
   let assistantMessage = ""
+  let latestResponseError = ""
   let assistantInfo: AssistantMessage | undefined
+  let foundAssistant = false
   const history = extractHistoryMessages(messages, pendingPermissionRequests)
   const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
 
@@ -405,17 +408,21 @@ function extractLatestMessages(
     const message = messages[index]
     if (!message) continue
 
-    if (!assistantMessage && message.info.role === "assistant") {
+    if (!foundAssistant && message.info.role === "assistant") {
+      foundAssistant = true
       assistantMessage = textParts(message.parts)
+      latestResponseError = assistantErrorText(message.info.error)
       if (hasContextTokens(message.info)) assistantInfo = message.info
     }
     if (!userMessage && message.info.role === "user") userMessage = textParts(message.parts)
-    if (userMessage && assistantMessage) break
+    if (userMessage && foundAssistant) break
   }
+  const responseErrorMessage = latestResponseError ? `Error: ${latestResponseError}` : ""
 
   return {
     userMessage,
-    assistantMessage: permissionMessage || assistantMessage,
+    assistantMessage: permissionMessage || responseErrorMessage || assistantMessage,
+    ...(latestResponseError ? { latestResponseError } : {}),
     messages: history,
     hasMore: messages.length >= limit,
     ...(assistantInfo !== undefined ? { assistantInfo } : {}),
@@ -451,6 +458,18 @@ function extractHistoryMessages(
         text,
         ...(message.info.role === "user" && !answeredUserIds.has(message.info.id) ? { queued: true } : {}),
       })
+    }
+
+    if (message.info.role === "assistant") {
+      const responseError = assistantErrorText(message.info.error)
+      if (responseError) {
+        history.push({
+          id: `${message.info.id}:error`,
+          role: "assistant",
+          text: responseError,
+          responseError: true,
+        })
+      }
     }
 
     for (const request of permissionRequestsByMessageId.get(message.info.id) ?? []) {
@@ -527,6 +546,24 @@ function historyTokens(message: AssistantMessage): number {
 
 function hasContextTokens(message: AssistantMessage): boolean {
   return historyTokens(message) > 0
+}
+
+function assistantErrorText(error: AssistantMessage["error"]): string {
+  if (!error) return ""
+
+  const message = dataMessage(error.data)
+  if (error.name === "MessageOutputLengthError") return message ?? "Response exceeded the output length limit."
+  if (error.name === "ProviderAuthError") return message ? `Provider auth error: ${message}` : "Provider auth error."
+  if (error.name === "APIError") {
+    const status = error.data.statusCode ? ` ${error.data.statusCode}` : ""
+    return message ? `API error${status}: ${message}` : `API error${status}.`
+  }
+  if (error.name === "MessageAbortedError") return message ?? "Response aborted."
+  return message ?? "Response failed."
+}
+
+function dataMessage(data: { [key: string]: unknown }): string | undefined {
+  return typeof data.message === "string" && data.message.trim() ? data.message.trim() : undefined
 }
 
 function isAbortError(error: unknown): boolean {

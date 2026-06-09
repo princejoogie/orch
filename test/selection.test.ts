@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  displayWorktreeName,
   formatAge,
   moveSelection,
   moveSelectionClamped,
@@ -45,6 +46,13 @@ describe("formatAge", () => {
     expect(formatAge(now.getTime() - 24 * 60 * 60 * 1000, now)).toBe("1d")
     expect(formatAge(now.getTime() - 47 * 60 * 60 * 1000, now)).toBe("1d")
     expect(formatAge(now.getTime() - 48 * 60 * 60 * 1000, now)).toBe("2d")
+  })
+})
+
+describe("displayWorktreeName", () => {
+  test("trims opencode branch prefix from display names", () => {
+    expect(displayWorktreeName("opencode/add-session-dialog")).toBe("add-session-dialog")
+    expect(displayWorktreeName("feature/add-session-dialog")).toBe("feature/add-session-dialog")
   })
 })
 
