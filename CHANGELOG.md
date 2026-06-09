@@ -1,5 +1,12 @@
 # orch
 
+## 1.2.1
+
+### Patch Changes
+
+- 469f427: Add opencode permission-request handling to the dashboard. Sessions with pending permissions now show in `Needs input`, open a permission dialog before the prompt dialog, and support once, always, deny, or cancel actions with documented shortcuts.
+- Improve session message previews and prompt history behavior. Session rows now prefer the newest visible user or assistant message from the v2 messages endpoint, surface latest assistant errors, and keep prompt-session history scrolled to the newest messages as updates arrive.
+
 ## 1.2.0
 
 ### Minor Changes

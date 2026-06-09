@@ -1,6 +1,6 @@
-import { TextAttributes } from "@opentui/core"
+import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useQuery } from "@tanstack/react-query"
-import { useEffect } from "react"
+import { useEffect, useLayoutEffect, useRef } from "react"
 import {
   DialogError,
   DialogLabel,
@@ -50,6 +50,7 @@ const PROMPT_ASSISTANT_BULLET = theme.info
 const PROMPT_USER_BACKGROUND = theme.backgroundElement
 const SELECTOR_DROPDOWN_BACKGROUND = theme.backgroundElement
 const SELECTOR_DROPDOWN_SELECTED_BACKGROUND = theme.backgroundElementActive
+const MAX_PROMPT_HISTORY_SCROLL_MEASURE_ATTEMPTS = 20
 
 export function PromptDialog({ width, height }: { width: number; height: number }) {
   const controller = useDashboardControllerContext()
@@ -229,6 +230,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
     0,
     Math.max(0, variantOptionCount - variantVisibleCount),
   )
+
   return (
     <>
       <StandardDialogFrame
@@ -280,26 +282,14 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           </box>
         ) : null}
         {promptLayout.historyHeight > 0 ? (
-          <scrollbox
-            focusable={false}
-            style={{
-              contentOptions: { flexDirection: "column" },
-              height: promptLayout.historyHeight,
-              marginBottom: promptLayout.historyMarginBottom,
-              paddingLeft: 1,
-              paddingRight: 1,
-              scrollX: false,
-              scrollY: true,
-              stickyScroll: true,
-              stickyStart: "bottom",
-              verticalScrollbarOptions: { showArrows: false },
-              viewportCulling: true,
-            }}
-          >
-            {historyLines.map((line) => (
-              <PromptHistoryText key={line.key} line={line} width={historyLineWidth} />
-            ))}
-          </scrollbox>
+          <PromptHistoryScrollbox
+            lines={historyLines}
+            width={historyLineWidth}
+            height={promptLayout.historyHeight}
+            marginBottom={promptLayout.historyMarginBottom}
+            sessionId={promptSessionId ?? ""}
+            loading={historyQuery.isPending}
+          />
         ) : null}
         <DialogTextarea
           value={state.value}
@@ -375,6 +365,82 @@ export function PromptDialog({ width, height }: { width: number; height: number 
         />
       ) : null}
     </>
+  )
+}
+
+function PromptHistoryScrollbox({
+  lines,
+  width,
+  height,
+  marginBottom,
+  sessionId,
+  loading,
+}: {
+  lines: PromptHistoryLine[]
+  width: number
+  height: number
+  marginBottom: number
+  sessionId: string
+  loading: boolean
+}) {
+  const scrollRef = useRef<ScrollBoxRenderable>(null)
+  const lastLine = lines.length > 0 ? lines[lines.length - 1] : undefined
+  const scrollVersion = [
+    sessionId,
+    height,
+    loading ? "pending" : "ready",
+    lines.length,
+    lastLine?.key ?? "",
+    lastLine?.text ?? "",
+  ].join("\n")
+
+  useLayoutEffect(() => {
+    const scroll = scrollRef.current
+    if (!scroll) return
+
+    let cancelled = false
+    let attempts = 0
+    const apply = () => {
+      if (cancelled) return
+      const viewportHeight = scroll.viewport.height
+      const scrollHeight = scroll.scrollHeight
+      if (viewportHeight <= 0 || scrollHeight < lines.length) {
+        if (attempts++ < MAX_PROMPT_HISTORY_SCROLL_MEASURE_ATTEMPTS) globalThis.setTimeout(apply, 16)
+        return
+      }
+
+      const nextTop = Math.max(0, scrollHeight - viewportHeight)
+      if (nextTop !== scroll.scrollTop) scroll.scrollTo({ x: 0, y: nextTop })
+    }
+
+    apply()
+    return () => {
+      cancelled = true
+    }
+  }, [lines.length, scrollVersion])
+
+  return (
+    <scrollbox
+      ref={scrollRef}
+      focusable={false}
+      style={{
+        contentOptions: { flexDirection: "column" },
+        height,
+        marginBottom,
+        paddingLeft: 1,
+        paddingRight: 1,
+        scrollX: false,
+        scrollY: true,
+        stickyScroll: true,
+        stickyStart: "bottom",
+        verticalScrollbarOptions: { showArrows: false },
+        viewportCulling: true,
+      }}
+    >
+      {lines.map((line) => (
+        <PromptHistoryText key={line.key} line={line} width={width} />
+      ))}
+    </scrollbox>
   )
 }
 

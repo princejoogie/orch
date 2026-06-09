@@ -31,6 +31,12 @@ export type LatestMessages = {
   assistantInfo?: AssistantMessage | undefined
 }
 
+export type LatestMessagePreview = {
+  message: string
+  userMessage: string
+  latestResponseError?: string | undefined
+}
+
 export async function sendPrompt(input: {
   sessionID: string
   text: string
@@ -269,16 +275,31 @@ export async function loadLatestMessages(input: {
   signal?: AbortSignal | undefined
 }): Promise<LatestMessages> {
   const limit = input.limit ?? LATEST_MESSAGES_LIMIT
-  const result = await opencodeClient(input.serverUrl).session.messages(
-    {
+  const client = opencodeClient(input.serverUrl)
+  const [result, preview] = await Promise.all([
+    client.session.messages(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+        limit,
+      },
+      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
+    ),
+    loadLatestMessagePreview({
+      client,
       sessionID: input.sessionID,
-      ...routeOptions(input),
+      directory: input.directory,
+      workspaceID: input.workspaceID,
       limit,
-    },
-    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-  )
+      pendingPermissionRequests: input.pendingPermissionRequests ?? [],
+      signal: input.signal,
+    }).catch((previewError): LatestMessagePreview | undefined => {
+      if (isAbortError(previewError)) throw previewError
+      return undefined
+    }),
+  ])
 
-  return extractLatestMessages(result.data, limit, input.pendingPermissionRequests ?? [])
+  return mergeLatestPreview(extractLatestMessages(result.data, limit, input.pendingPermissionRequests ?? []), preview)
 }
 
 export async function loadSessionHistory(input: {
@@ -421,12 +442,106 @@ function extractLatestMessages(
 
   return {
     userMessage,
-    assistantMessage: permissionMessage || responseErrorMessage || assistantMessage,
+    assistantMessage: permissionMessage || responseErrorMessage || latestHistoryPreview(history) || assistantMessage,
     ...(latestResponseError ? { latestResponseError } : {}),
     messages: history,
     hasMore: messages.length >= limit,
     ...(assistantInfo !== undefined ? { assistantInfo } : {}),
   }
+}
+
+async function loadLatestMessagePreview(input: {
+  client: ReturnType<typeof opencodeClient>
+  sessionID: string
+  directory?: string | undefined
+  workspaceID?: string | undefined
+  limit: number
+  pendingPermissionRequests: SessionPermissionRequest[]
+  signal?: AbortSignal | undefined
+}): Promise<LatestMessagePreview> {
+  const result = await input.client.v2.session.messages(
+    {
+      sessionID: input.sessionID,
+      ...routeOptions(input),
+      limit: input.limit,
+      order: "desc",
+    },
+    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
+  )
+
+  return latestSessionMessagePreview(result.data.items, input.pendingPermissionRequests)
+}
+
+function mergeLatestPreview(messages: LatestMessages, preview: LatestMessagePreview | undefined): LatestMessages {
+  if (!preview) return messages
+  return {
+    ...messages,
+    userMessage: preview.userMessage || messages.userMessage,
+    assistantMessage: preview.message || messages.assistantMessage,
+    latestResponseError: preview.latestResponseError,
+  }
+}
+
+export function latestSessionMessagePreview(
+  messages: SessionMessage[],
+  pendingPermissionRequests: SessionPermissionRequest[] = [],
+): LatestMessagePreview {
+  let message = ""
+  let messageRole: "user" | "assistant" | undefined
+  let userMessage = ""
+  let latestResponseError = ""
+  let foundAssistant = false
+  const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
+
+  for (const item of messages) {
+    if (!userMessage && item.type === "user") userMessage = item.text.trim()
+    if (!foundAssistant && item.type === "assistant") {
+      foundAssistant = true
+      latestResponseError = sessionErrorText(item.error)
+    }
+    if (!message) {
+      const text = sessionMessageText(item)
+      if (text) {
+        message = text
+        if (item.type === "user" || item.type === "assistant") messageRole = item.type
+      }
+    }
+    if (message && userMessage && foundAssistant) break
+  }
+
+  const latestMessageResponseError = messageRole === "assistant" ? latestResponseError : ""
+  const responseErrorMessage = latestMessageResponseError ? `Error: ${latestMessageResponseError}` : ""
+  return {
+    message: permissionMessage || responseErrorMessage || message,
+    userMessage,
+    ...(latestMessageResponseError ? { latestResponseError: latestMessageResponseError } : {}),
+  }
+}
+
+function latestHistoryPreview(messages: SessionHistoryMessage[]): string {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.text.trim()) return message.text.trim()
+  }
+  return ""
+}
+
+function sessionMessageText(message: SessionMessage): string {
+  if (message.type === "user") return message.text.trim()
+  if (message.type === "assistant") return assistantContentText(message) || sessionErrorText(message.error)
+  return ""
+}
+
+function assistantContentText(message: Extract<SessionMessage, { type: "assistant" }>): string {
+  return message.content
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n")
+    .trim()
+}
+
+function sessionErrorText(error: Extract<SessionMessage, { type: "assistant" }>["error"]): string {
+  return error?.message.trim() ?? ""
 }
 
 function extractHistoryMessages(
