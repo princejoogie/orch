@@ -1,5 +1,11 @@
 # orch
 
+## 1.3.0
+
+### Minor Changes
+
+- Refactor the OpenCode SDK data layer around the v2 client, add event-driven dashboard refresh with polling fallback, and add a git-dummy termctrl e2e smoke script.
+
 ## 1.2.1
 
 ### Patch Changes

@@ -11,6 +11,7 @@ Primary scripts in `package.json`:
 - `bun run typecheck`: strict TypeScript gate.
 - `bun run lint`: oxlint gate over `src/`, `scripts/`, and `test/`.
 - `bun run test`: Bun tests.
+- `bun run test:e2e:git-dummy`: opt-in termctrl e2e smoke against the local `git-dummy` OpenCode fixture.
 - `bun run package:smoke`: builds the binary and checks `--help`/`--version`.
 - `bun run build:standalone`: creates release tarballs and `.sha256` files for the current or requested target.
 
@@ -110,6 +111,16 @@ Prefer testing extracted pure functions over driving the terminal renderer.
 ## TUI Verification With termctrl
 
 Use `termctrl` for end-to-end checks that depend on visible OpenTUI behavior. Prefer named sessions for multi-step interaction, and always stop the session when finished.
+
+`bun run test:e2e:git-dummy` builds `dist/orch`, starts it in a `termctrl` OpenTUI session, selects the `git-dummy` project fixture, and verifies the visible dashboard, menus, search, settings, add-session dialog, prompt dialog, shortcuts help, and project cycling. It is not part of `bun run check` or CI because it requires a live OpenCode server with the local fixture data.
+
+Useful overrides:
+
+```sh
+ORCH_E2E_SKIP_BUILD=1 bun run test:e2e:git-dummy
+ORCH_E2E_KEEP_ALIVE=1 bun run test:e2e:git-dummy
+ORCH_E2E_PROJECT_INDEX=6 ORCH_E2E_PROJECT_NAME=git-dummy bun run test:e2e:git-dummy
+```
 
 Example workflow:
 

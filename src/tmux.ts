@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { realpathSync } from "node:fs"
 import { basename } from "node:path"
 import { $ } from "bun"
-import type { SessionRow } from "./opencode.ts"
+import type { SessionRow } from "./opencode/client/index.ts"
 
 type Pane = {
   paneId: string

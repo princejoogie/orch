@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
-import { latestSessionMessagePreview } from "../src/opencode.ts"
+import { latestSessionMessagePreview } from "../src/opencode/client/index.ts"
 
 const userMessage = (id: string, text: string, created = 0): Extract<SessionMessage, { type: "user" }> => ({
   id,
@@ -15,7 +15,7 @@ const assistantMessage = (id: string, text: string, created = 0): Extract<Sessio
   type: "assistant",
   agent: "build",
   model: { id: "model", providerID: "provider", variant: "default" },
-  content: [{ type: "text", text }],
+  content: [{ id: `${id}:text`, type: "text", text }],
 })
 
 const assistantError = (id: string, message: string, created = 0): Extract<SessionMessage, { type: "assistant" }> => ({

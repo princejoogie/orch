@@ -1,26 +1,9 @@
-import {
-  createOpencodeClient,
-  type Agent,
-  type AssistantMessage,
-  type Part,
-  type PermissionRequest,
-  type Provider,
-  type SessionMessage,
-  type SessionMessagesResponse,
-} from "@opencode-ai/sdk/v2"
-import { DEFAULT_OPENCODE_SERVER_URL, defaultOpencodeServerUrl, normalizeServerUrl } from "../config/orch.ts"
-import type { SessionHistoryMessage, SessionPermissionRequest } from "./types.ts"
+import type { AssistantMessage, Part, Provider, SessionMessage, SessionMessagesResponse } from "@opencode-ai/sdk/v2"
+import type { SessionHistoryMessage, SessionPermissionRequest } from "../types.ts"
+import { isAbortError, opencodeClient, routeOptions, type OpencodeClient } from "./base.ts"
+import { formatPermissionRequests, loadPendingPermissions, permissionHistoryMessage } from "./permission.ts"
 
-export const DEFAULT_LIMIT = 100
 export const LATEST_MESSAGES_LIMIT = 20
-
-export function opencodeServerUrl(): string {
-  return defaultOpencodeServerUrl()
-}
-
-export function opencodeClient(serverUrl = opencodeServerUrl()) {
-  return createOpencodeClient({ baseUrl: normalizeServerUrl(serverUrl) || DEFAULT_OPENCODE_SERVER_URL })
-}
 
 export type LatestMessages = {
   userMessage: string
@@ -94,130 +77,6 @@ export async function createSessionWithPrompt(input: {
   })
 
   return session.data.id
-}
-
-export async function createWorktree(input: {
-  directory: string
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-}): Promise<{ directory: string; name: string }> {
-  const worktree = await opencodeClient(input.serverUrl).worktree.create(
-    { directory: input.directory, ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}) },
-    { throwOnError: true },
-  )
-
-  return { directory: worktree.data.directory, name: worktree.data.name }
-}
-
-export type ModelOption = {
-  providerID: string
-  providerName: string
-  modelID: string
-  name: string
-  variants: string[]
-}
-
-export type ModelProviderOption = {
-  id: string
-  name: string
-  models: ModelOption[]
-}
-
-export type DefaultModelOption = {
-  providerID: string
-  modelID: string
-  variant?: string | undefined
-}
-
-export async function loadDefaultModel(input: {
-  directory?: string | undefined
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-  signal?: AbortSignal | undefined
-}): Promise<DefaultModelOption | undefined> {
-  const client = opencodeClient(input.serverUrl)
-  const [config, agents] = await Promise.all([
-    client.config.get(routeOptions(input), {
-      throwOnError: true,
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    }),
-    client.app.agents(routeOptions(input), {
-      throwOnError: true,
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    }),
-  ])
-  return defaultAgentModel(config.data.default_agent, agents.data) ?? parseModelConfig(config.data.model)
-}
-
-export async function loadModelProviders(input: {
-  directory?: string | undefined
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-  signal?: AbortSignal | undefined
-}): Promise<ModelProviderOption[]> {
-  const result = await opencodeClient(input.serverUrl).config.providers(routeOptions(input), {
-    throwOnError: true,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-  })
-
-  return result.data.providers
-    .map((provider: Provider) => {
-      const providerName = provider.name ?? provider.id
-      return {
-        id: provider.id,
-        name: providerName,
-        models: Object.entries(provider.models).map(([modelID, model]) => ({
-          providerID: provider.id,
-          providerName,
-          modelID,
-          name: model.name ?? modelID,
-          variants: Object.keys(model.variants ?? {}),
-        })),
-      }
-    })
-    .filter((provider) => provider.models.length > 0)
-}
-
-function parseModelConfig(value: string | undefined): DefaultModelOption | undefined {
-  if (!value) return undefined
-
-  const separatorIndex = value.indexOf("/")
-  if (separatorIndex <= 0 || separatorIndex === value.length - 1) return undefined
-
-  return {
-    providerID: value.slice(0, separatorIndex),
-    modelID: value.slice(separatorIndex + 1),
-  }
-}
-
-function defaultAgentModel(defaultAgentName: string | undefined, agents: Agent[]): DefaultModelOption | undefined {
-  const configuredAgent = defaultAgentName ? agents.find((agent) => agent.name === defaultAgentName) : undefined
-  const fallbackAgent = agents.find((agent) => agent.name === "build")
-  const agent = configuredAgent ?? fallbackAgent
-  const model = agent?.model
-  if (!model) return undefined
-
-  return {
-    providerID: model.providerID,
-    modelID: model.modelID,
-    ...(agent.variant !== undefined ? { variant: agent.variant } : {}),
-  }
-}
-
-export async function removeWorktree(input: {
-  projectDirectory: string
-  worktreeDirectory: string
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).worktree.remove(
-    {
-      directory: input.projectDirectory,
-      ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
-      worktreeRemoveInput: { directory: input.worktreeDirectory },
-    },
-    { throwOnError: true },
-  )
 }
 
 export async function deleteSession(input: {
@@ -337,40 +196,6 @@ export async function loadSessionHistory(input: {
   return extractHistoryMessages(result.data, pendingPermissionRequests)
 }
 
-export async function loadPendingPermissions(input: {
-  sessionID?: string | undefined
-  directory?: string | undefined
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-  signal?: AbortSignal | undefined
-}): Promise<SessionPermissionRequest[]> {
-  const result = await opencodeClient(input.serverUrl).permission.list(routeOptions(input), {
-    throwOnError: true,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-  })
-  const requests = result.data.map(toSessionPermissionRequest)
-  return input.sessionID === undefined ? requests : requests.filter((request) => request.sessionID === input.sessionID)
-}
-
-export async function replyPermissionRequest(input: {
-  requestID: string
-  reply: "once" | "always" | "reject"
-  message?: string | undefined
-  directory?: string | undefined
-  workspaceID?: string | undefined
-  serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).permission.reply(
-    {
-      requestID: input.requestID,
-      reply: input.reply,
-      ...routeOptions(input),
-      ...(input.message !== undefined ? { message: input.message } : {}),
-    },
-    { throwOnError: true },
-  )
-}
-
 export async function loadContextUsage(input: {
   sessionID: string
   directory?: string | undefined
@@ -394,7 +219,7 @@ export async function loadContextUsage(input: {
     }),
   ])
 
-  const latestAssistant = latestAssistantMessage(context.data)
+  const latestAssistant = latestAssistantMessage(context.data.data)
   const fallbackAssistant = latestAssistant ? undefined : input.historyAssistantMessage
   const tokens = latestAssistant
     ? contextTokens(latestAssistant)
@@ -410,6 +235,42 @@ export async function loadContextUsage(input: {
   const limit = model?.limit.context
   const percent = tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined
   return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
+}
+
+export function latestSessionMessagePreview(
+  messages: SessionMessage[],
+  pendingPermissionRequests: SessionPermissionRequest[] = [],
+): LatestMessagePreview {
+  let message = ""
+  let messageRole: "user" | "assistant" | undefined
+  let userMessage = ""
+  let latestResponseError = ""
+  let foundAssistant = false
+  const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
+
+  for (const item of messages) {
+    if (!userMessage && item.type === "user") userMessage = item.text.trim()
+    if (!foundAssistant && item.type === "assistant") {
+      foundAssistant = true
+      latestResponseError = sessionErrorText(item.error)
+    }
+    if (!message) {
+      const text = sessionMessageText(item)
+      if (text) {
+        message = text
+        if (item.type === "user" || item.type === "assistant") messageRole = item.type
+      }
+    }
+    if (message && userMessage && foundAssistant) break
+  }
+
+  const latestMessageResponseError = messageRole === "assistant" ? latestResponseError : ""
+  const responseErrorMessage = latestMessageResponseError ? `Error: ${latestMessageResponseError}` : ""
+  return {
+    message: permissionMessage || responseErrorMessage || message,
+    userMessage,
+    ...(latestMessageResponseError ? { latestResponseError: latestMessageResponseError } : {}),
+  }
 }
 
 function extractLatestMessages(
@@ -451,7 +312,7 @@ function extractLatestMessages(
 }
 
 async function loadLatestMessagePreview(input: {
-  client: ReturnType<typeof opencodeClient>
+  client: OpencodeClient
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
@@ -469,7 +330,7 @@ async function loadLatestMessagePreview(input: {
     { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
   )
 
-  return latestSessionMessagePreview(result.data.items, input.pendingPermissionRequests)
+  return latestSessionMessagePreview(result.data.data, input.pendingPermissionRequests)
 }
 
 function mergeLatestPreview(messages: LatestMessages, preview: LatestMessagePreview | undefined): LatestMessages {
@@ -479,42 +340,6 @@ function mergeLatestPreview(messages: LatestMessages, preview: LatestMessagePrev
     userMessage: preview.userMessage || messages.userMessage,
     assistantMessage: preview.message || messages.assistantMessage,
     latestResponseError: preview.latestResponseError,
-  }
-}
-
-export function latestSessionMessagePreview(
-  messages: SessionMessage[],
-  pendingPermissionRequests: SessionPermissionRequest[] = [],
-): LatestMessagePreview {
-  let message = ""
-  let messageRole: "user" | "assistant" | undefined
-  let userMessage = ""
-  let latestResponseError = ""
-  let foundAssistant = false
-  const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
-
-  for (const item of messages) {
-    if (!userMessage && item.type === "user") userMessage = item.text.trim()
-    if (!foundAssistant && item.type === "assistant") {
-      foundAssistant = true
-      latestResponseError = sessionErrorText(item.error)
-    }
-    if (!message) {
-      const text = sessionMessageText(item)
-      if (text) {
-        message = text
-        if (item.type === "user" || item.type === "assistant") messageRole = item.type
-      }
-    }
-    if (message && userMessage && foundAssistant) break
-  }
-
-  const latestMessageResponseError = messageRole === "assistant" ? latestResponseError : ""
-  const responseErrorMessage = latestMessageResponseError ? `Error: ${latestMessageResponseError}` : ""
-  return {
-    message: permissionMessage || responseErrorMessage || message,
-    userMessage,
-    ...(latestMessageResponseError ? { latestResponseError: latestMessageResponseError } : {}),
   }
 }
 
@@ -601,45 +426,6 @@ function extractHistoryMessages(
   return history
 }
 
-function toSessionPermissionRequest(request: PermissionRequest): SessionPermissionRequest {
-  return {
-    id: request.id,
-    sessionID: request.sessionID,
-    permission: request.permission,
-    patterns: request.patterns,
-    summary: formatPermissionRequest(request.permission, request.patterns),
-    ...(request.tool !== undefined ? { tool: request.tool } : {}),
-  }
-}
-
-export function formatPermissionRequests(requests: SessionPermissionRequest[]): string {
-  if (requests.length === 0) return ""
-  if (requests.length === 1) return requests[0]!.summary
-  const permissions = [...new Set(requests.map((request) => request.permission))].join(", ")
-  return `${requests.length} permission requests: ${permissions}`
-}
-
-function formatPermissionRequest(permission: string, patterns: string[]): string {
-  const patternText = patterns.length > 0 ? ` ${patterns.join(", ")}` : ""
-  return `Permission requested: ${permission}${patternText}`
-}
-
-function permissionHistoryMessage(request: SessionPermissionRequest): SessionHistoryMessage {
-  return {
-    id: `permission:${request.id}`,
-    role: "assistant",
-    text: request.summary,
-    permissionRequested: true,
-  }
-}
-
-function routeOptions(input: { directory?: string | undefined; workspaceID?: string | undefined }) {
-  return {
-    ...(input.directory !== undefined ? { directory: input.directory } : {}),
-    ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
-  }
-}
-
 function latestAssistantMessage(
   messages: SessionMessage[],
 ): Extract<SessionMessage, { type: "assistant" }> | undefined {
@@ -679,10 +465,6 @@ function assistantErrorText(error: AssistantMessage["error"]): string {
 
 function dataMessage(data: { [key: string]: unknown }): string | undefined {
   return typeof data.message === "string" && data.message.trim() ? data.message.trim() : undefined
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError"
 }
 
 function textParts(parts: Part[]): string {

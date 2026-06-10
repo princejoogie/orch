@@ -12,7 +12,7 @@ This document defines where code belongs.
 - `src/store/`: Zustand stores for app-wide UI state and dashboard page state.
 - `src/config/`: orch config/state file paths, JSON persistence, config normalization, and shared UI/page constants.
 - `src/lib/`: pure utilities and domain-agnostic helpers.
-- `src/opencode/`: opencode API client, snapshot loading, and related types.
+- `src/opencode/`: opencode API client modules, snapshot loading, and related types.
 - `scripts/`: build, release, smoke, and maintenance scripts.
 - `test/`: Bun tests for pure behavior and workflow-critical utilities.
 
@@ -105,11 +105,11 @@ Generic keymap files stay reusable by modeling parsing and dispatch. App-specifi
 
 `src/config/orch.ts` owns persisted orch configuration. Config is stored at `~/.config/orch/config.json`; generic app state helpers write below `~/.local/state/orch`.
 
-`src/opencode/client.ts` owns low-level API calls.
+`src/opencode/client/` owns low-level API calls and groups them by OpenCode concern: sessions, permissions, models, worktrees, events, and dashboard snapshots. `src/opencode/client/index.ts` is the public import seam for OpenCode data; do not add a top-level `src/opencode.ts` barrel.
 
-`src/opencode/snapshot.ts` owns assembling the dashboard snapshot, including pending permission requests that move sessions into the needs-input lane.
+`src/opencode/client/snapshot.ts` owns assembling the dashboard snapshot, including pending permission requests that move sessions into the needs-input lane.
 
-Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from local `git worktree list --porcelain`, selected-project sessions come from `client.session.list()`, and pending permission requests come from `client.permission.list()`. Project snapshots are filtered to projects with sessions whose `projectID` matches the project row and sorted by latest session activity before reaching UI code. Project session rows are cached per project, then the dashboard controller applies the active worktree filter before rendering the session list. Session row latest-message previews use the v2 session messages endpoint with descending order so the table previews the newest visible user or assistant message; the prompt dialog separately loads full history for its scrollable message list.
+Use opencode SDK endpoints when they exist. For example, project tabs come from `client.project.list()`, project worktree options come from `client.project.directories()` after a best-effort `client.experimental.projectCopy.refresh()`, selected-project sessions come from `client.session.list()`, and pending permission requests come from `client.permission.list()`. Project snapshots are filtered to projects with sessions whose `projectID` matches the project row and sorted by latest session activity before reaching UI code. Project session rows are cached per project, then the dashboard controller applies the active worktree filter before rendering the session list. Session row latest-message previews use the v2 session messages endpoint with descending order so the table previews the newest visible user or assistant message; the prompt dialog separately loads full history for its scrollable message list. Dashboard data refresh is primarily event-driven through OpenCode's event stream, with slower query polling left as a fallback for missed events or older servers.
 
 UI components should consume prepared `SessionRow` data rather than calling the opencode SDK directly.
 

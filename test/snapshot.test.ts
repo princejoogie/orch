@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2"
-import { sessionListItems } from "../src/opencode/snapshot.ts"
+import { sessionListItems } from "../src/opencode/client/index.ts"
 
 const session = { id: "session-1" } as Session
 

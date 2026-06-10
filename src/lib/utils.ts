@@ -4,7 +4,7 @@ import {
   type SessionPermissionRequest,
   type SessionRow,
   type SessionStatus,
-} from "../opencode.ts"
+} from "../opencode/client/index.ts"
 import { theme } from "../theme.ts"
 
 export { formatDirectory }

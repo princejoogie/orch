@@ -1,5 +1,5 @@
 import { performance } from "node:perf_hooks"
-import { getSessions, opencodeServerUrl } from "../src/opencode.ts"
+import { getSessions, opencodeServerUrl } from "../src/opencode/client/index.ts"
 
 const iterations = Number(Bun.argv.find((arg) => arg.startsWith("--iterations="))?.split("=")[1] ?? 20)
 const limit = Number(Bun.argv.find((arg) => arg.startsWith("--limit="))?.split("=")[1] ?? 300)

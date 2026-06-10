@@ -17,6 +17,7 @@ import { useScrollFollowSelected } from "./use-scroll-follow-selected.ts"
 import { appKeymap } from "../keymap/dashboard.ts"
 import { useOpenTuiSubscribe } from "../keymap/opentui-adapter.ts"
 import { useKeymap } from "../keymap/react.ts"
+import { useOpencodeEventRefresh } from "./use-opencode-event-refresh.ts"
 import {
   moveSelection,
   moveSelectionClamped,
@@ -48,7 +49,7 @@ import {
   type ModelProviderOption,
   type ProjectSnapshot,
   type SessionRow,
-} from "../opencode.ts"
+} from "../opencode/client/index.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore, type MenuId } from "../store/global.ts"
 import { openTmuxSessionForRow } from "../tmux.ts"
@@ -195,6 +196,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     statusLineCount,
   )
   const subscribe = useOpenTuiSubscribe()
+  useOpencodeEventRefresh(globalStore.config.activeServerUrl)
   const actionsMenuItems: MenuItem[] = [
     {
       label: "New Session",

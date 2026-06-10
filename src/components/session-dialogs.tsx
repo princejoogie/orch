@@ -30,7 +30,7 @@ import {
   loadSessionHistory,
   type DefaultModelOption,
   type SessionHistoryMessage,
-} from "../opencode.ts"
+} from "../opencode/client/index.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"

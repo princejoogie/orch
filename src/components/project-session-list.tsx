@@ -1,9 +1,9 @@
 import { useQuery } from "@tanstack/react-query"
 import { useEffect, useRef } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { EMPTY_SESSION_ROWS, POLL_INTERVAL_MS } from "../config/constants.ts"
+import { EMPTY_SESSION_ROWS, PROJECT_POLL_INTERVAL_MS } from "../config/constants.ts"
 import { SECTIONS, errorMessage } from "../lib/utils.ts"
-import { getProjectSessions } from "../opencode.ts"
+import { getProjectSessions } from "../opencode/client/index.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
@@ -25,6 +25,7 @@ export function ProjectSessionList({ width }: { width: number }) {
   } = useQuery({
     queryKey: ["opencode-project-sessions", globalStore.config.activeServerUrl, controller.activeTab?.id],
     enabled: controller.activeTab !== undefined,
+    refetchInterval: PROJECT_POLL_INTERVAL_MS,
     queryFn: ({ signal }) => {
       if (!controller.activeTab) throw new Error("No project selected")
       return getProjectSessions({
@@ -70,12 +71,6 @@ export function ProjectSessionList({ width }: { width: number }) {
     sessionsPending,
     setSessionListState,
   ])
-
-  useEffect(() => {
-    if (!controller.activeTab) return
-    const interval = setInterval(() => void refetchSessions(), POLL_INTERVAL_MS)
-    return () => clearInterval(interval)
-  }, [controller.activeTab, refetchSessions])
 
   useEffect(() => {
     if (!sessionErrorToastKey) {

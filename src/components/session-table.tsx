@@ -12,7 +12,7 @@ import {
   type Section,
   type Selection,
 } from "../lib/utils.ts"
-import { type SessionRow } from "../opencode.ts"
+import { type SessionRow } from "../opencode/client/index.ts"
 import { theme } from "../theme.ts"
 
 function tableLayout(width: number) {

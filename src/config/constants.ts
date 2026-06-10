@@ -1,7 +1,6 @@
-import type { SessionRow } from "../opencode.ts"
+import type { SessionRow } from "../opencode/client/index.ts"
 import { theme } from "../theme.ts"
 
-export const POLL_INTERVAL_MS = 2_000
 export const PROJECT_POLL_INTERVAL_MS = 30_000
 export const APP_PADDING_X = 2
 export const APP_PADDING_Y = 1

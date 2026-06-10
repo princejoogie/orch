@@ -12,7 +12,7 @@ import type {
   Selection,
   WorktreeOption,
 } from "../lib/utils.ts"
-import type { DashboardSnapshot, SessionRow } from "../opencode.ts"
+import type { DashboardSnapshot, SessionRow } from "../opencode/client/index.ts"
 
 export type SessionListState = {
   snapshot?: DashboardSnapshot | undefined

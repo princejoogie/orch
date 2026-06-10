@@ -9,7 +9,7 @@ import {
   type LaneStatus,
   type Selection,
 } from "../src/lib/utils.ts"
-import type { SessionRow } from "../src/opencode.ts"
+import type { SessionRow } from "../src/opencode/client/index.ts"
 
 const row = (id: string, status: SessionRow["status"]): SessionRow => ({
   id,

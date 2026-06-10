@@ -5,15 +5,6 @@ import type {
   Session as OpencodeSession,
   SessionStatus as OpencodeSessionStatus,
 } from "@opencode-ai/sdk/v2"
-import {
-  DEFAULT_LIMIT,
-  formatPermissionRequests,
-  loadContextUsage,
-  loadLatestMessages,
-  loadPendingPermissions,
-  opencodeClient,
-  opencodeServerUrl,
-} from "./client.ts"
 import type {
   DashboardSnapshot,
   ProjectRow,
@@ -22,7 +13,10 @@ import type {
   SessionRow,
   SessionStatus,
   WorktreeRow,
-} from "./types.ts"
+} from "../types.ts"
+import { DEFAULT_LIMIT, isAbortError, opencodeClient, opencodeServerUrl, type OpencodeClient } from "./base.ts"
+import { formatPermissionRequests, loadPendingPermissions } from "./permission.ts"
+import { loadContextUsage, loadLatestMessages } from "./session.ts"
 
 const PROJECT_SESSION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 
@@ -68,7 +62,7 @@ export async function getProjects(
     await Promise.all(
       projects.data.map(async (project) =>
         Promise.all([
-          loadProjectWorktrees(project),
+          loadProjectWorktrees(client, project, options.signal),
           loadRecentProjectSessionUpdated(client, project, options.signal),
         ]).then(([worktrees, sessionUpdated]) =>
           sessionUpdated !== undefined ? toProjectRow(project, worktrees, sessionUpdated) : undefined,
@@ -140,72 +134,53 @@ type SessionDetails = Pick<
   | "contextTokens"
   | "contextPercent"
 >
-type GitWorktree = {
-  directory: string
-  head?: string | undefined
-  branch?: string | undefined
-  bare?: boolean | undefined
-  prunable?: boolean | undefined
+type SessionLike = GlobalSession | OpencodeSession
+type SessionListData = OpencodeSession[] | { items: OpencodeSession[] }
+
+async function loadProjectWorktrees(
+  client: OpencodeClient,
+  project: OpencodeProject,
+  signal: AbortSignal | undefined,
+): Promise<WorktreeRow[]> {
+  await refreshProjectCopies(client, project, signal)
+  return worktreeRows(project.worktree, await loadProjectDirectories(client, project, signal))
 }
 
-async function loadProjectWorktrees(project: OpencodeProject): Promise<WorktreeRow[]> {
-  return worktreeRows(project.worktree, await loadGitWorktrees(project.worktree))
-}
-
-async function loadGitWorktrees(directory: string): Promise<GitWorktree[]> {
+async function refreshProjectCopies(
+  client: OpencodeClient,
+  project: OpencodeProject,
+  signal: AbortSignal | undefined,
+): Promise<void> {
   try {
-    const process = Bun.spawn(["git", "-C", directory, "worktree", "list", "--porcelain"], {
-      stdout: "pipe",
-      stderr: "ignore",
-    })
-    const output = await new Response(process.stdout).text()
-    const exitCode = await process.exited
-    if (exitCode !== 0) return []
-
-    return parseGitWorktrees(output)
-  } catch (worktreeError) {
-    console.error("Failed to load git worktrees", worktreeError)
-    return []
+    await client.experimental.projectCopy.refresh(
+      { projectID: project.id, directory: project.worktree },
+      { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
+    )
+  } catch (refreshError) {
+    if (isAbortError(refreshError)) throw refreshError
   }
 }
 
-function parseGitWorktrees(output: string): GitWorktree[] {
-  const worktrees: GitWorktree[] = []
-  let current: GitWorktree | undefined
-
-  const flush = () => {
-    if (current) {
-      worktrees.push(current)
-      current = undefined
-    }
+async function loadProjectDirectories(
+  client: OpencodeClient,
+  project: OpencodeProject,
+  signal: AbortSignal | undefined,
+): Promise<string[]> {
+  try {
+    const result = await client.project.directories(
+      { projectID: project.id, directory: project.worktree },
+      { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
+    )
+    return result.data
+  } catch (directoryError) {
+    if (isAbortError(directoryError)) throw directoryError
+    console.error("Failed to load project directories", directoryError)
+    return [project.worktree]
   }
-
-  for (const line of output.split("\n")) {
-    if (line.trim() === "") {
-      flush()
-      continue
-    }
-
-    if (line.startsWith("worktree ")) {
-      flush()
-      current = { directory: line.slice("worktree ".length) }
-      continue
-    }
-
-    if (!current) continue
-
-    if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
-    else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
-    else if (line === "bare") current.bare = true
-    else if (line.startsWith("prunable")) current.prunable = true
-  }
-
-  flush()
-  return worktrees.filter((worktree) => worktree.directory.length > 0 && !worktree.bare && !worktree.prunable)
 }
 
 async function loadRecentProjectSessionUpdated(
-  client: ReturnType<typeof opencodeClient>,
+  client: OpencodeClient,
   project: OpencodeProject,
   signal: AbortSignal | undefined,
 ): Promise<number | undefined> {
@@ -228,34 +203,25 @@ async function loadRecentProjectSessionUpdated(
   }
 }
 
-function worktreeRows(primaryDirectory: string, worktrees: GitWorktree[]): WorktreeRow[] {
+function worktreeRows(primaryDirectory: string, directories: string[]): WorktreeRow[] {
   const rows = new Map<string, WorktreeRow>()
-  const primary = worktrees.find((worktree) => sameDirectory(worktree.directory, primaryDirectory))
   rows.set(primaryDirectory, {
     directory: primaryDirectory,
-    name: worktreeName(primary) ?? formatDirectory(primaryDirectory),
+    name: formatDirectory(primaryDirectory),
     primary: true,
   })
 
-  for (const worktree of worktrees) {
-    if (sameDirectory(worktree.directory, primaryDirectory)) continue
-    if (rows.has(worktree.directory)) continue
-    rows.set(worktree.directory, {
-      directory: worktree.directory,
-      name: worktreeName(worktree) ?? formatDirectory(worktree.directory),
+  for (const directory of directories) {
+    if (!directory || sameDirectory(directory, primaryDirectory)) continue
+    if ([...rows.keys()].some((existing) => sameDirectory(existing, directory))) continue
+    rows.set(directory, {
+      directory,
+      name: formatDirectory(directory),
     })
   }
 
   const [primaryRow, ...rest] = [...rows.values()]
   return primaryRow ? [primaryRow, ...rest.sort((left, right) => left.name.localeCompare(right.name))] : []
-}
-
-function worktreeName(worktree: GitWorktree | undefined): string | undefined {
-  return worktree?.branch ?? worktree?.head?.slice(0, 8)
-}
-
-function shortBranch(branch: string): string {
-  return branch.replace(/^refs\/heads\//, "").replace(/^refs\/remotes\//, "")
 }
 
 async function loadStatuses(
@@ -404,9 +370,6 @@ function routeKey(input: { directory: string; workspaceID?: string | undefined }
   return `${input.directory}\t${input.workspaceID ?? ""}`
 }
 
-type SessionLike = GlobalSession | OpencodeSession
-type SessionListData = OpencodeSession[] | { items: OpencodeSession[] }
-
 export function sessionListItems(data: SessionListData): OpencodeSession[] {
   return Array.isArray(data) ? data : data.items
 }
@@ -469,10 +432,6 @@ function inferStatus(session: SessionLike, status?: OpencodeSessionStatus): Sess
   if (session.time.compacting) return "working"
   if (status?.type === "busy" || status?.type === "retry") return "working"
   return "completed"
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError"
 }
 
 function sameDirectory(left: string, right: string): boolean {
