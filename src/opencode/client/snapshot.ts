@@ -19,6 +19,7 @@ import { formatPermissionRequests, loadPendingPermissions } from "./permission.t
 import { loadContextUsage, loadLatestMessages } from "./session.ts"
 
 const PROJECT_SESSION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const PROJECT_COPY_REFRESH_TIMEOUT_MS = 5_000
 
 export async function getSessions(
   options: { limit?: number; serverUrl?: string | undefined; signal?: AbortSignal | undefined } = {},
@@ -60,14 +61,12 @@ export async function getProjects(
   )
   const rows = (
     await Promise.all(
-      projects.data.map(async (project) =>
-        Promise.all([
-          loadProjectWorktrees(client, project, options.signal),
-          loadRecentProjectSessionUpdated(client, project, options.signal),
-        ]).then(([worktrees, sessionUpdated]) =>
-          sessionUpdated !== undefined ? toProjectRow(project, worktrees, sessionUpdated) : undefined,
-        ),
-      ),
+      projects.data.map(async (project) => {
+        const sessionUpdated = await loadRecentProjectSessionUpdated(client, project, options.signal)
+        if (sessionUpdated === undefined) return undefined
+
+        return toProjectRow(project, await loadProjectWorktrees(client, project, options.signal), sessionUpdated)
+      }),
     )
   ).filter((row): row is ProjectRow => row !== undefined)
 
@@ -152,13 +151,18 @@ async function refreshProjectCopies(
   signal: AbortSignal | undefined,
 ): Promise<void> {
   try {
-    await client.experimental.projectCopy.refresh(
-      { projectID: project.id, directory: project.worktree },
-      { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
+    await client.v2.projectCopy.refresh(
+      { projectID: project.id, location: { directory: project.worktree } },
+      { throwOnError: true, signal: refreshSignal(signal) },
     )
   } catch (refreshError) {
-    if (isAbortError(refreshError)) throw refreshError
+    if (signal?.aborted && isAbortError(refreshError)) throw refreshError
   }
+}
+
+function refreshSignal(signal: AbortSignal | undefined): AbortSignal {
+  const timeoutSignal = AbortSignal.timeout(PROJECT_COPY_REFRESH_TIMEOUT_MS)
+  return signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal
 }
 
 async function loadProjectDirectories(
@@ -171,7 +175,7 @@ async function loadProjectDirectories(
       { projectID: project.id, directory: project.worktree },
       { throwOnError: true, ...(signal !== undefined ? { signal } : {}) },
     )
-    return result.data
+    return projectDirectoryItems(result.data)
   } catch (directoryError) {
     if (isAbortError(directoryError)) throw directoryError
     console.error("Failed to load project directories", directoryError)
@@ -374,6 +378,15 @@ export function sessionListItems(data: SessionListData): OpencodeSession[] {
   return Array.isArray(data) ? data : data.items
 }
 
+export function projectDirectoryItems(data: unknown): string[] {
+  if (!Array.isArray(data)) return []
+  return data.flatMap((item) => {
+    if (typeof item === "string") return [item]
+    if (isObject(item) && typeof item.directory === "string") return [item.directory]
+    return []
+  })
+}
+
 function isActiveSession(session: SessionLike): boolean {
   return !session.time.archived
 }
@@ -449,4 +462,8 @@ function canonicalDirectory(directory: string): string {
 export function formatDirectory(directory: string): string {
   const normalized = directory.replace(/\/+$/, "")
   return normalized.split("/").pop() || directory
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null
 }

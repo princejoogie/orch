@@ -1,4 +1,4 @@
-import type { AssistantMessage, Part, Provider, SessionMessage, SessionMessagesResponse } from "@opencode-ai/sdk/v2"
+import type { AssistantMessage, Part, Provider, SessionMessage, SessionMessagesResponse2 } from "@opencode-ai/sdk/v2"
 import type { SessionHistoryMessage, SessionPermissionRequest } from "../types.ts"
 import { isAbortError, opencodeClient, routeOptions, type OpencodeClient } from "./base.ts"
 import { formatPermissionRequests, loadPendingPermissions, permissionHistoryMessage } from "./permission.ts"
@@ -274,7 +274,7 @@ export function latestSessionMessagePreview(
 }
 
 function extractLatestMessages(
-  messages: SessionMessagesResponse,
+  messages: SessionMessagesResponse2,
   limit: number,
   pendingPermissionRequests: SessionPermissionRequest[],
 ): LatestMessages {
@@ -370,7 +370,7 @@ function sessionErrorText(error: Extract<SessionMessage, { type: "assistant" }>[
 }
 
 function extractHistoryMessages(
-  messages: SessionMessagesResponse,
+  messages: SessionMessagesResponse2,
   pendingPermissionRequests: SessionPermissionRequest[] = [],
 ): SessionHistoryMessage[] {
   const answeredUserIds = new Set<string>()

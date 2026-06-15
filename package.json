@@ -29,7 +29,7 @@
     "package:smoke": "bun run scripts/package-smoke.ts"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "1.16.2",
+    "@opencode-ai/sdk": "1.17.7",
     "@opentui/core": "0.2.15",
     "@opentui/react": "0.2.15",
     "@tanstack/react-query": "^5.100.14",
