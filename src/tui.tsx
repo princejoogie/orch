@@ -1,6 +1,7 @@
 import { createCliRenderer } from "@opentui/core"
 import { createRoot, useTerminalDimensions } from "@opentui/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
+import { Data, Deferred, Effect } from "effect"
 import { AppDialogs } from "./components/app-dialogs.tsx"
 import { AppMenus } from "./components/app-menus.tsx"
 import { Sidebar } from "./components/sidebar.tsx"
@@ -23,40 +24,49 @@ import { SettingsPage } from "./pages/settings.tsx"
 import { DashboardStoreProvider } from "./store/dashboard.ts"
 import { useGlobalStore } from "./store/global.ts"
 import { theme } from "./theme.ts"
+import { AppRuntime } from "./effect/app-runtime.ts"
 
 interface RunTuiOptions {
   args: string[]
 }
 
-export async function runTui(_options: RunTuiOptions): Promise<void> {
-  let resolveDone!: () => void
-  const done = new Promise<void>((resolve) => {
-    resolveDone = resolve
+export class TuiError extends Data.TaggedError("TuiError")<{
+  readonly message: string
+  readonly cause: unknown
+}> {}
+
+export function runTui(_options: RunTuiOptions): Effect.Effect<void, TuiError> {
+  return Effect.gen(function* () {
+    const done = yield* Deferred.make<void, never>()
+    const queryClient = new QueryClient()
+
+    const renderer = yield* Effect.tryPromise({
+      try: () =>
+        createCliRenderer({
+          exitOnCtrlC: false,
+          targetFps: 30,
+          useKittyKeyboard: {},
+          useMouse: true,
+          openConsoleOnError: true,
+          onDestroy: () => {
+            queryClient.clear()
+            AppRuntime.runFork(Deferred.succeed(done, undefined))
+          },
+        }),
+      catch: (cause) => new TuiError({ message: "Failed to create OpenTUI renderer", cause }),
+    })
+
+    renderer.setBackgroundColor(theme.background)
+    createRoot(renderer).render(
+      <QueryClientProvider client={queryClient}>
+        <DashboardStoreProvider>
+          <App />
+        </DashboardStoreProvider>
+      </QueryClientProvider>,
+    )
+
+    yield* Deferred.await(done)
   })
-  const queryClient = new QueryClient()
-
-  const renderer = await createCliRenderer({
-    exitOnCtrlC: false,
-    targetFps: 30,
-    useKittyKeyboard: {},
-    useMouse: true,
-    openConsoleOnError: true,
-    onDestroy: () => {
-      queryClient.clear()
-      resolveDone()
-    },
-  })
-
-  renderer.setBackgroundColor(theme.background)
-  createRoot(renderer).render(
-    <QueryClientProvider client={queryClient}>
-      <DashboardStoreProvider>
-        <App />
-      </DashboardStoreProvider>
-    </QueryClientProvider>,
-  )
-
-  await done
 }
 
 function App() {

@@ -1,6 +1,8 @@
 #!/usr/bin/env bun
 
+import { Effect } from "effect"
 import packageJson from "../package.json" with { type: "json" }
+import { AppRuntime } from "./effect/app-runtime.ts"
 
 const HELP_TEXT =
   `orch ${packageJson.version}
@@ -20,21 +22,21 @@ Keys:
   q, Esc, Ctrl+C    Quit
 `
 
-export async function main(args = Bun.argv.slice(2)): Promise<void> {
+export function main(args = Bun.argv.slice(2)): Effect.Effect<void, unknown> {
   if (args.includes("--help") || args.includes("-h")) {
-    console.log(HELP_TEXT)
-    return
+    return Effect.sync(() => console.log(HELP_TEXT))
   }
 
   if (args.includes("--version") || args.includes("-v")) {
-    console.log(packageJson.version)
-    return
+    return Effect.sync(() => console.log(packageJson.version))
   }
 
-  const { runTui } = await import("./tui.tsx")
-  await runTui({ args })
+  return Effect.gen(function* () {
+    const { runTui } = yield* Effect.tryPromise(() => import("./tui.tsx"))
+    yield* runTui({ args })
+  })
 }
 
 if (import.meta.main) {
-  await main()
+  await AppRuntime.runPromise(main())
 }

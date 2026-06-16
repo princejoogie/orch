@@ -2,6 +2,7 @@ import { createHash } from "node:crypto"
 import { realpathSync } from "node:fs"
 import { basename } from "node:path"
 import { $ } from "bun"
+import { Data, Effect } from "effect"
 import type { SessionRow } from "./opencode/client/index.ts"
 
 type Pane = {
@@ -25,25 +26,42 @@ type GitWorktree = {
   prunable: boolean
 }
 
-export async function openTmuxSessionForRow(row: SessionRow): Promise<void> {
-  const sessionName = await resolveSessionName(row)
+export class TmuxError extends Data.TaggedError("TmuxError")<{
+  readonly message: string
+  readonly operation: string
+  readonly cause: unknown
+}> {}
 
-  if (!(await tmuxHasSession(sessionName))) {
-    await runTmuxNewSession(sessionName, row.directory)
-  }
+export function openTmuxSessionForRow(row: SessionRow): Effect.Effect<void, TmuxError> {
+  return Effect.gen(function* () {
+    const sessionName = yield* resolveSessionName(row)
 
-  await focusOpencodePane(sessionName)
-  await openExistingTmuxSession(sessionName)
+    if (!(yield* tmuxHasSession(sessionName))) {
+      yield* runTmuxNewSession(sessionName, row.directory)
+    }
+
+    yield* focusOpencodePane(sessionName)
+    yield* openExistingTmuxSession(sessionName)
+  })
 }
 
-async function resolveSessionName(row: SessionRow): Promise<string> {
-  const baseName = (await tmsSessionName(row.directory)) ?? baseSessionName(row)
-  const hashedName = `${baseName}_${hashPath(row.directory)}`
-  const sessions = await listTmuxSessionNames()
+function tmuxCommand<A>(operation: string, run: () => PromiseLike<A>): Effect.Effect<A, TmuxError> {
+  return Effect.tryPromise({
+    try: run,
+    catch: (cause) => new TmuxError({ message: `tmux operation failed: ${operation}`, operation, cause }),
+  })
+}
 
-  if (sessions.includes(baseName)) return baseName
-  if (sessions.includes(hashedName)) return hashedName
-  return baseName
+function resolveSessionName(row: SessionRow): Effect.Effect<string, TmuxError> {
+  return Effect.gen(function* () {
+    const baseName = (yield* tmsSessionName(row.directory)) ?? baseSessionName(row)
+    const hashedName = `${baseName}_${hashPath(row.directory)}`
+    const sessions = yield* listTmuxSessionNames()
+
+    if (sessions.includes(baseName)) return baseName
+    if (sessions.includes(hashedName)) return hashedName
+    return baseName
+  })
 }
 
 function baseSessionName(row: SessionRow): string {
@@ -54,60 +72,66 @@ function baseSessionName(row: SessionRow): string {
   return sanitizeSessionName(row.projectTitle)
 }
 
-async function tmsSessionName(directory: string): Promise<string | undefined> {
-  const worktrees = await gitWorktrees(directory)
-  const main = worktrees.find((worktree) => !worktree.bare && !worktree.prunable)
-  if (!main) return undefined
+function tmsSessionName(directory: string): Effect.Effect<string | undefined, TmuxError> {
+  return Effect.gen(function* () {
+    const worktrees = yield* gitWorktrees(directory)
+    const main = worktrees.find((worktree) => !worktree.bare && !worktree.prunable)
+    if (!main) return undefined
 
-  const currentPath = realPath(directory)
-  const current = worktrees.find(
-    (worktree) => !worktree.bare && !worktree.prunable && realPath(worktree.path) === currentPath,
-  )
-  if (!current) return undefined
+    const currentPath = realPath(directory)
+    const current = worktrees.find(
+      (worktree) => !worktree.bare && !worktree.prunable && realPath(worktree.path) === currentPath,
+    )
+    if (!current) return undefined
 
-  const repoName = basename(main.path)
-  if (realPath(current.path) === realPath(main.path)) return sanitizeSessionName(repoName)
+    const repoName = basename(main.path)
+    if (realPath(current.path) === realPath(main.path)) return sanitizeSessionName(repoName)
 
-  return sanitizeSessionName(`${repoName}_${worktreeLabel(current)}`)
+    return sanitizeSessionName(`${repoName}_${worktreeLabel(current)}`)
+  })
 }
 
-async function gitWorktrees(directory: string): Promise<GitWorktree[]> {
-  const result = await $`git -C ${directory} worktree list --porcelain`.quiet().nothrow()
-  if (result.exitCode !== 0) return []
+function gitWorktrees(directory: string): Effect.Effect<GitWorktree[], TmuxError> {
+  return Effect.gen(function* () {
+    const result = yield* tmuxCommand("git.worktree.list", () =>
+      $`git -C ${directory} worktree list --porcelain`.quiet().nothrow(),
+    )
+    if (result.exitCode !== 0) return []
 
-  const worktrees: GitWorktree[] = []
-  let current: GitWorktree | undefined
+    const worktrees: GitWorktree[] = []
+    let current: GitWorktree | undefined
 
-  const flush = () => {
-    if (current) {
-      current.path = realPath(current.path)
-      worktrees.push(current)
-      current = undefined
-    }
-  }
-
-  for (const line of result.stdout.toString().split("\n")) {
-    if (line.trim() === "") {
-      flush()
-      continue
+    const flush = () => {
+      if (current) {
+        current.path = realPath(current.path)
+        worktrees.push(current)
+        current = undefined
+      }
     }
 
-    if (line.startsWith("worktree ")) {
-      flush()
-      current = { path: line.slice("worktree ".length), bare: false, prunable: false }
-      continue
+    for (const line of result.stdout.toString().split("\n")) {
+      if (line.trim() === "") {
+        flush()
+        continue
+      }
+
+      if (line.startsWith("worktree ")) {
+        flush()
+        current = { path: line.slice("worktree ".length), bare: false, prunable: false }
+        continue
+      }
+
+      if (!current) continue
+
+      if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
+      else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
+      else if (line === "bare") current.bare = true
+      else if (line.startsWith("prunable")) current.prunable = true
     }
 
-    if (!current) continue
-
-    if (line.startsWith("HEAD ")) current.head = line.slice("HEAD ".length)
-    else if (line.startsWith("branch ")) current.branch = shortBranch(line.slice("branch ".length))
-    else if (line === "bare") current.bare = true
-    else if (line.startsWith("prunable")) current.prunable = true
-  }
-
-  flush()
-  return worktrees
+    flush()
+    return worktrees
+  })
 }
 
 function worktreeLabel(worktree: GitWorktree): string {
@@ -140,30 +164,34 @@ function hashPath(path: string): string {
   return createHash("sha1").update(path).digest("hex").slice(0, 6)
 }
 
-async function focusOpencodePane(sessionName: string): Promise<void> {
-  const pane = await findOpencodePane(sessionName)
-  if (!pane) return
+function focusOpencodePane(sessionName: string): Effect.Effect<void, TmuxError> {
+  return Effect.gen(function* () {
+    const pane = yield* findOpencodePane(sessionName)
+    if (!pane) return
 
-  await $`tmux select-window -t ${pane.windowId}`.quiet()
-  await $`tmux select-pane -t ${pane.paneId}`.quiet()
+    yield* tmuxCommand("tmux.select-window", () => $`tmux select-window -t ${pane.windowId}`.quiet())
+    yield* tmuxCommand("tmux.select-pane", () => $`tmux select-pane -t ${pane.paneId}`.quiet())
+  })
 }
 
-async function findOpencodePane(sessionName: string): Promise<Pane | undefined> {
-  const panes = await listPanes(sessionName)
-  if (panes.length === 0) return undefined
+function findOpencodePane(sessionName: string): Effect.Effect<Pane | undefined, TmuxError> {
+  return Effect.gen(function* () {
+    const panes = yield* listPanes(sessionName)
+    if (panes.length === 0) return undefined
 
-  const direct = panes.find((pane) => isOpencodeCommand(pane.currentCommand))
-  if (direct) return direct
+    const direct = panes.find((pane) => isOpencodeCommand(pane.currentCommand))
+    if (direct) return direct
 
-  const processes = await listProcesses()
-  const childrenByParent = new Map<number, ProcessRow[]>()
-  for (const process of processes) {
-    const children = childrenByParent.get(process.ppid) ?? []
-    children.push(process)
-    childrenByParent.set(process.ppid, children)
-  }
+    const processes = yield* listProcesses()
+    const childrenByParent = new Map<number, ProcessRow[]>()
+    for (const process of processes) {
+      const children = childrenByParent.get(process.ppid) ?? []
+      children.push(process)
+      childrenByParent.set(process.ppid, children)
+    }
 
-  return panes.find((pane) => hasOpencodeDescendant(pane.pid, childrenByParent))
+    return panes.find((pane) => hasOpencodeDescendant(pane.pid, childrenByParent))
+  })
 }
 
 function hasOpencodeDescendant(pid: number, childrenByParent: Map<number, ProcessRow[]>): boolean {
@@ -186,77 +214,96 @@ function isOpencodeCommand(command: string): boolean {
   return /(^|[/\s])opencode(\s|$)/.test(command)
 }
 
-async function listTmuxSessionNames(): Promise<string[]> {
-  const result = await $`tmux list-sessions -F "#{session_name}"`.quiet().nothrow()
-  if (result.exitCode !== 0) return []
+function listTmuxSessionNames(): Effect.Effect<string[], TmuxError> {
+  return Effect.gen(function* () {
+    const result = yield* tmuxCommand("tmux.list-sessions", () =>
+      $`tmux list-sessions -F "#{session_name}"`.quiet().nothrow(),
+    )
+    if (result.exitCode !== 0) return []
 
-  return result.stdout.toString().split("\n").filter(Boolean)
+    return result.stdout.toString().split("\n").filter(Boolean)
+  })
 }
 
-async function listPanes(sessionName: string): Promise<Pane[]> {
+function listPanes(sessionName: string): Effect.Effect<Pane[], TmuxError> {
   const format = "#{pane_id}\t#{window_id}\t#{pane_current_command}\t#{pane_pid}"
-  const result = await $`tmux list-panes -t ${sessionName} -s -F ${format}`.quiet().nothrow()
-  if (result.exitCode !== 0) return []
+  return Effect.gen(function* () {
+    const result = yield* tmuxCommand("tmux.list-panes", () =>
+      $`tmux list-panes -t ${sessionName} -s -F ${format}`.quiet().nothrow(),
+    )
+    if (result.exitCode !== 0) return []
 
-  return result.stdout
-    .toString()
-    .split("\n")
-    .filter(Boolean)
-    .flatMap((line) => {
-      const [paneId, windowId, currentCommand, pid] = line.split("\t")
-      const parsedPid = Number(pid)
-      if (!paneId || !windowId || !currentCommand || !Number.isInteger(parsedPid)) return []
-      return [{ paneId, windowId, currentCommand, pid: parsedPid }]
-    })
+    return result.stdout
+      .toString()
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((line) => {
+        const [paneId, windowId, currentCommand, pid] = line.split("\t")
+        const parsedPid = Number(pid)
+        if (!paneId || !windowId || !currentCommand || !Number.isInteger(parsedPid)) return []
+        return [{ paneId, windowId, currentCommand, pid: parsedPid }]
+      })
+  })
 }
 
-async function listProcesses(): Promise<ProcessRow[]> {
-  const result = await $`ps -axo pid=,ppid=,command=`.quiet().nothrow()
-  if (result.exitCode !== 0) return []
+function listProcesses(): Effect.Effect<ProcessRow[], TmuxError> {
+  return Effect.gen(function* () {
+    const result = yield* tmuxCommand("ps.list", () => $`ps -axo pid=,ppid=,command=`.quiet().nothrow())
+    if (result.exitCode !== 0) return []
 
-  return result.stdout
-    .toString()
-    .split("\n")
-    .filter(Boolean)
-    .flatMap((line) => {
-      const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
-      if (!match) return []
-      return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] ?? "" }]
-    })
+    return result.stdout
+      .toString()
+      .split("\n")
+      .filter(Boolean)
+      .flatMap((line) => {
+        const match = line.match(/^\s*(\d+)\s+(\d+)\s+(.+)$/)
+        if (!match) return []
+        return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] ?? "" }]
+      })
+  })
 }
 
-async function openExistingTmuxSession(name: string): Promise<void> {
+function openExistingTmuxSession(name: string): Effect.Effect<void, TmuxError> {
   if (process.env.TMUX) {
-    await runTmuxSwitchClient(name)
-  } else {
-    await runTmuxAttachSession(name)
+    return runTmuxSwitchClient(name)
   }
+
+  return runTmuxAttachSession(name)
 }
 
-async function tmuxHasSession(name: string): Promise<boolean> {
-  const result = await $`tmux has-session -t ${name}`.quiet().nothrow()
-  return result.exitCode === 0
+function tmuxHasSession(name: string): Effect.Effect<boolean, TmuxError> {
+  return tmuxCommand("tmux.has-session", () => $`tmux has-session -t ${name}`.quiet().nothrow()).pipe(
+    Effect.map((result) => result.exitCode === 0),
+  )
 }
 
-async function runTmuxNewSession(name: string, path: string): Promise<void> {
-  await $`tmux new-session -d -s ${name} -c ${path}`.quiet()
+function runTmuxNewSession(name: string, path: string): Effect.Effect<void, TmuxError> {
+  return tmuxCommand("tmux.new-session", () => $`tmux new-session -d -s ${name} -c ${path}`.quiet()).pipe(Effect.asVoid)
 }
 
-async function runTmuxSwitchClient(name: string): Promise<void> {
-  await keepCurrentSessionAlive()
-  await $`tmux switch-client -t ${name}`
+function runTmuxSwitchClient(name: string): Effect.Effect<void, TmuxError> {
+  return Effect.gen(function* () {
+    yield* keepCurrentSessionAlive()
+    yield* tmuxCommand("tmux.switch-client", () => $`tmux switch-client -t ${name}`)
+  })
 }
 
-async function keepCurrentSessionAlive(): Promise<void> {
-  const result = await $`tmux display-message -p "#{session_name}"`.quiet().nothrow()
-  if (result.exitCode !== 0) return
+function keepCurrentSessionAlive(): Effect.Effect<void, TmuxError> {
+  return Effect.gen(function* () {
+    const result = yield* tmuxCommand("tmux.display-current-session", () =>
+      $`tmux display-message -p "#{session_name}"`.quiet().nothrow(),
+    )
+    if (result.exitCode !== 0) return
 
-  const currentSession = result.stdout.toString().trim()
-  if (!currentSession) return
+    const currentSession = result.stdout.toString().trim()
+    if (!currentSession) return
 
-  await $`tmux set-option -t ${currentSession} destroy-unattached off`.quiet().nothrow()
+    yield* tmuxCommand("tmux.keep-current-session", () =>
+      $`tmux set-option -t ${currentSession} destroy-unattached off`.quiet().nothrow(),
+    )
+  })
 }
 
-async function runTmuxAttachSession(name: string): Promise<void> {
-  await $`tmux attach-session -t ${name} < ${Bun.stdin}`
+function runTmuxAttachSession(name: string): Effect.Effect<void, TmuxError> {
+  return tmuxCommand("tmux.attach-session", () => $`tmux attach-session -t ${name} < ${Bun.stdin}`).pipe(Effect.asVoid)
 }

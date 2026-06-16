@@ -954,7 +954,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         console.error("Failed to switch opencode session", tuiError)
       }
 
-      await openTmuxSessionForRow(row)
+      await AppRuntime.runPromise(openTmuxSessionForRow(row))
     } catch (tmuxError) {
       console.error("Failed to open tmux", tmuxError)
       globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
