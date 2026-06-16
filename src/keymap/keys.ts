@@ -1,3 +1,5 @@
+import { Data } from "effect"
+
 export interface ParsedStroke {
   readonly key: string
   readonly ctrl: boolean
@@ -7,17 +9,24 @@ export interface ParsedStroke {
 
 const MODIFIERS = new Set(["ctrl", "shift", "meta"])
 
+export class KeyParseError extends Data.TaggedError("KeyParseError")<{
+  readonly message: string
+  readonly input: string
+}> {}
+
 export function parseKey(input: string): ParsedStroke {
   const parts = input
     .split("+")
     .map((part) => part.trim().toLowerCase())
     .filter(Boolean)
-  if (parts.length === 0) throw new Error(`Empty key string: ${JSON.stringify(input)}`)
+  if (parts.length === 0) throw new KeyParseError({ message: `Empty key string: ${JSON.stringify(input)}`, input })
 
   const key = parts[parts.length - 1]!
   const mods = new Set(parts.slice(0, -1))
   for (const mod of mods) {
-    if (!MODIFIERS.has(mod)) throw new Error(`Unknown modifier ${JSON.stringify(mod)} in ${JSON.stringify(input)}`)
+    if (!MODIFIERS.has(mod)) {
+      throw new KeyParseError({ message: `Unknown modifier ${JSON.stringify(mod)} in ${JSON.stringify(input)}`, input })
+    }
   }
 
   return { key, ctrl: mods.has("ctrl"), shift: mods.has("shift"), meta: mods.has("meta") }

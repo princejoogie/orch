@@ -1,6 +1,7 @@
 import { TextAttributes } from "@opentui/core"
 import type { OrchServer } from "../config/orch.ts"
 import { serverNameFromUrl } from "../config/orch.ts"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import { useSettingsControllerContext } from "../hooks/use-settings-controller.tsx"
 import { clamp } from "../lib/utils.ts"
 import { useGlobalStore } from "../store/global.ts"
@@ -35,7 +36,7 @@ export function SettingsPage({ width, height }: { width: number; height: number 
   const serverMenuItems: MenuItem[] = state.servers.map((server, index) => ({
     label: server.name,
     shortcut: server.url === state.activeServerUrl ? "active" : "switch",
-    run: () => void settingsController.selectSettingsServer(index),
+    run: () => void AppRuntime.runPromise(settingsController.selectSettingsServer(index)),
   }))
 
   return (
@@ -84,7 +85,7 @@ export function SettingsPage({ width, height }: { width: number; height: number 
         height={1}
         clearVersion={globalStore.settingsClearVersion}
         onInput={globalStore.setSettingsInput}
-        onSubmit={(serverUrl) => void settingsController.addServerFromSettings(serverUrl)}
+        onSubmit={(serverUrl) => void AppRuntime.runPromise(settingsController.addServerFromSettings(serverUrl))}
       />
       <DialogError error={state.error} width={contentWidth} />
       <box style={{ flexGrow: 1 }} />
@@ -94,7 +95,7 @@ export function SettingsPage({ width, height }: { width: number; height: number 
           shortcut="enter"
           width={18}
           disabled={state.saving || state.serverUrlValue.trim().length === 0}
-          onPress={() => void settingsController.addServerFromSettings(state.serverUrlValue)}
+          onPress={() => void AppRuntime.runPromise(settingsController.addServerFromSettings(state.serverUrlValue))}
         />
         <ButtonSpacer />
         <Button label="Back" shortcut="esc" width={11} onPress={globalStore.closeSettingsPage} />

@@ -17,6 +17,8 @@ Primary scripts in `package.json`:
 
 Run `bun run check` before handing off substantial changes.
 
+Build, standalone release, and package smoke scripts are Effect programs. Keep script IO and validation failures as tagged errors and bridge to process exit only at the top-level entrypoint.
+
 ## TypeScript Strictness
 
 `tsconfig.json` intentionally enables stricter options:

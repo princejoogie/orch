@@ -1,5 +1,6 @@
 import { TextAttributes, type ScrollBoxRenderable } from "@opentui/core"
 import { useQuery } from "@tanstack/react-query"
+import { Effect } from "effect"
 import { useEffect, useLayoutEffect, useRef } from "react"
 import {
   DialogError,
@@ -97,9 +98,9 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           serverUrl: globalStore.config.activeServerUrl,
           directory: state.row.directory,
           workspaceID: state.row.workspaceID,
-        }),
+        }).pipe(Effect.map((model) => model ?? null)),
         { signal },
-      ).then((model) => model ?? null)
+      )
     },
     enabled: state !== undefined,
   })
@@ -275,7 +276,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
                 shortcut="↵"
                 width={10}
                 disabled={state.sending || state.value.trim().length === 0}
-                onPress={() => void controller.submitPrompt(state.value)}
+                onPress={() => void AppRuntime.runPromise(controller.submitPrompt(state.value))}
               />
               <ButtonSpacer />
               <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closePromptDialog} />
@@ -330,7 +331,7 @@ export function PromptDialog({ width, height }: { width: number; height: number 
           clearVersion={dashboardStore.promptClearVersion}
           onFocus={() => dashboardStore.setPromptFocus("input")}
           onInput={dashboardStore.setPromptValue}
-          onSubmit={(value) => void controller.submitPrompt(value)}
+          onSubmit={(value) => void AppRuntime.runPromise(controller.submitPrompt(value))}
         />
         <DialogError error={dialogError} width={dialogWidth} />
       </StandardDialogFrame>
@@ -588,7 +589,7 @@ export function PermissionDialog({ width, height }: { width: number; height: num
             shortcut="↵"
             width={buttonLayout.once}
             disabled={responding}
-            onPress={() => void controller.replyToPermission("once")}
+            onPress={() => void AppRuntime.runPromise(controller.replyToPermission("once"))}
           />
           <text content={" ".repeat(buttonLayout.gap)} />
           <Button
@@ -596,7 +597,7 @@ export function PermissionDialog({ width, height }: { width: number; height: num
             shortcut="a"
             width={buttonLayout.always}
             disabled={responding}
-            onPress={() => void controller.replyToPermission("always")}
+            onPress={() => void AppRuntime.runPromise(controller.replyToPermission("always"))}
           />
           <text content={" ".repeat(buttonLayout.gap)} />
           <Button
@@ -605,7 +606,7 @@ export function PermissionDialog({ width, height }: { width: number; height: num
             width={buttonLayout.deny}
             danger
             disabled={responding}
-            onPress={() => void controller.replyToPermission("reject")}
+            onPress={() => void AppRuntime.runPromise(controller.replyToPermission("reject"))}
           />
           <text content={" ".repeat(buttonLayout.gap)} />
           <Button
@@ -725,9 +726,9 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           serverUrl: globalStore.config.activeServerUrl,
           directory: addModelDirectory,
           ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
-        }),
+        }).pipe(Effect.map((model) => model ?? null)),
         { signal },
-      ).then((model) => model ?? null)
+      )
     },
     enabled: state !== undefined,
   })
@@ -906,7 +907,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
                 shortcut="↵"
                 width={12}
                 disabled={state.sending || state.value.trim().length === 0}
-                onPress={() => void controller.submitAddSession(state.value)}
+                onPress={() => void AppRuntime.runPromise(controller.submitAddSession(state.value))}
               />
               <ButtonSpacer />
               <Button label="Cancel" shortcut="esc" width={14} onPress={dashboardStore.closeAddSessionDialog} />
@@ -944,7 +945,7 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
           clearVersion={dashboardStore.addSessionClearVersion}
           onFocus={() => dashboardStore.setAddSessionFocus("input")}
           onInput={dashboardStore.setAddSessionValue}
-          onSubmit={(value) => void controller.submitAddSession(value)}
+          onSubmit={(value) => void AppRuntime.runPromise(controller.submitAddSession(value))}
         />
         <WorktreeSelector
           width={selectorWidth}

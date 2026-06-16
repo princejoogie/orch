@@ -1,6 +1,7 @@
 import { createContext, createElement, useContext, useRef, type ReactNode } from "react"
 import { createStore, type StoreApi } from "zustand/vanilla"
 import { useStore } from "zustand"
+import { Data } from "effect"
 import type {
   AddSessionDialogState,
   CollapsedSections,
@@ -108,6 +109,10 @@ export type DashboardStore = {
   clearRowsByProject: () => void
   setSessionListState: (state: SessionListState) => void
 }
+
+export class DashboardStoreProviderError extends Data.TaggedError("DashboardStoreProviderError")<{
+  readonly message: string
+}> {}
 
 const DashboardStoreContext = createContext<StoreApi<DashboardStore> | undefined>(undefined)
 
@@ -464,7 +469,7 @@ export function useDashboardStore<T>(selector?: (store: DashboardStore) => T): D
   const store = useContext(DashboardStoreContext)
 
   if (!store) {
-    throw new Error("useDashboardStore must be used inside DashboardStoreProvider")
+    throw new DashboardStoreProviderError({ message: "useDashboardStore must be used inside DashboardStoreProvider" })
   }
 
   return selector ? useStore(store, selector) : useStore(store)

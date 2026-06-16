@@ -60,6 +60,16 @@ Prefer the smallest change that fixes the behavior and preserves conventions.
 
 ## Async And Errors
 
+App-owned async, IO, SDK, CLI, and script work should be modeled with Effect. Keep Promise APIs at external edges only, then bridge with `AppRuntime.runPromise` from React Query, React lifecycle handlers, and executable entrypoints.
+
+Follow these rules:
+
+- Use `Effect.gen`, `Effect.tryPromise`, and `Effect.try` for async or fallible work.
+- Use `Data.TaggedError` for app-owned failures instead of throwing generic `Error` values.
+- Avoid `unknown` error channels in app-owned Effect APIs; map external failures to tagged errors at the seam.
+- Keep the OpenCode SDK boundary in `src/opencode/client/` and filesystem persistence in `src/config/persistence.ts`.
+- Catch recoverable UI action failures inside the Effect program and surface them through dialog state or toasts.
+
 Async UI actions should set in-progress state and clear stale errors.
 
 For dialogs:

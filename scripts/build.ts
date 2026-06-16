@@ -20,27 +20,30 @@ class BuildError extends Data.TaggedError("BuildError")<{
   readonly cause: unknown
 }> {}
 
-function getHostTarget(): BuildTarget {
+function getHostTarget(): Effect.Effect<BuildTarget, BuildError> {
   const platform = process.platform === "win32" ? "windows" : process.platform
 
   if (platform !== "darwin" && platform !== "linux" && platform !== "windows") {
-    throw new Error(`Unsupported platform: ${process.platform}`)
+    return Effect.fail(
+      new BuildError({ message: `Unsupported platform: ${process.platform}`, cause: process.platform }),
+    )
   }
 
   if (process.arch !== "x64" && process.arch !== "arm64") {
-    throw new Error(`Unsupported architecture: ${process.arch}`)
+    return Effect.fail(new BuildError({ message: `Unsupported architecture: ${process.arch}`, cause: process.arch }))
   }
 
-  return { platform, arch: process.arch }
+  return Effect.succeed({ platform, arch: process.arch })
 }
 
 const args = process.argv.slice(2)
 const rootDir = resolve(import.meta.dirname, "..")
 const distDir = join(rootDir, "dist")
-const target = getHostTarget()
-const outfile = join(distDir, target.platform === "windows" ? "orch.exe" : "orch")
 
 const program = Effect.gen(function* () {
+  const target = yield* getHostTarget()
+  const outfile = join(distDir, target.platform === "windows" ? "orch.exe" : "orch")
+
   if (!args.includes("--no-clean")) {
     yield* Effect.tryPromise({
       try: () => rm(distDir, { recursive: true, force: true }),

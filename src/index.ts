@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 
-import { Effect } from "effect"
+import { Data, Effect } from "effect"
 import packageJson from "../package.json" with { type: "json" }
 import { AppRuntime } from "./effect/app-runtime.ts"
 
@@ -22,7 +22,12 @@ Keys:
   q, Esc, Ctrl+C    Quit
 `
 
-export function main(args = Bun.argv.slice(2)): Effect.Effect<void, unknown> {
+export class CliImportError extends Data.TaggedError("CliImportError")<{
+  readonly message: string
+  readonly cause: unknown
+}> {}
+
+export function main(args = Bun.argv.slice(2)) {
   if (args.includes("--help") || args.includes("-h")) {
     return Effect.sync(() => console.log(HELP_TEXT))
   }
@@ -32,7 +37,10 @@ export function main(args = Bun.argv.slice(2)): Effect.Effect<void, unknown> {
   }
 
   return Effect.gen(function* () {
-    const { runTui } = yield* Effect.tryPromise(() => import("./tui.tsx"))
+    const { runTui } = yield* Effect.tryPromise({
+      try: () => import("./tui.tsx"),
+      catch: (cause) => new CliImportError({ message: "Failed to load TUI", cause }),
+    })
     yield* runTui({ args })
   })
 }

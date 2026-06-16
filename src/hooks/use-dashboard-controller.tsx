@@ -1,6 +1,7 @@
 import { type ScrollBoxRenderable } from "@opentui/core"
 import { useRenderer } from "@opentui/react"
 import { useQuery } from "@tanstack/react-query"
+import { Data, Effect, Either } from "effect"
 import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode, type RefObject } from "react"
 import { SHORTCUTS, type ShortcutAction } from "../components/shortcuts.ts"
 import { type MenuItem } from "../components/ui/menu-dropdown.tsx"
@@ -77,9 +78,9 @@ export type DashboardController = {
   serverMenuItems: MenuItem[]
   openMenu: (menu: MenuId) => void
   openSettingsPage: () => void
-  submitAddSession: (value: string) => Promise<void>
-  replyToPermission: (reply: "once" | "always" | "reject") => Promise<void>
-  submitPrompt: (value: string) => Promise<void>
+  submitAddSession: (value: string) => Effect.Effect<void>
+  replyToPermission: (reply: "once" | "always" | "reject") => Effect.Effect<void>
+  submitPrompt: (value: string) => Effect.Effect<void>
   confirmDeleteWorktree: () => void
   confirmDeleteSession: () => void
   confirmInterruptSession: () => void
@@ -89,6 +90,15 @@ export type DashboardController = {
 }
 
 const DashboardControllerContext = createContext<DashboardController | undefined>(undefined)
+
+class DashboardRefreshError extends Data.TaggedError("DashboardRefreshError")<{
+  readonly message: string
+  readonly cause: unknown
+}> {}
+
+class DashboardControllerProviderError extends Data.TaggedError("DashboardControllerProviderError")<{
+  readonly message: string
+}> {}
 
 export function DashboardControllerProvider({ tableHeight, children }: { tableHeight: number; children: ReactNode }) {
   const controller = useDashboardController({ tableHeight })
@@ -100,7 +110,9 @@ export function useDashboardControllerContext(): DashboardController {
   const controller = useContext(DashboardControllerContext)
 
   if (!controller) {
-    throw new Error("useDashboardControllerContext must be used inside DashboardControllerProvider")
+    throw new DashboardControllerProviderError({
+      message: "useDashboardControllerContext must be used inside DashboardControllerProvider",
+    })
   }
 
   return controller
@@ -206,7 +218,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       disabled: !activeTab || worktreeOptions(activeTab).length === 0,
       run: openAddSessionDialog,
     },
-    { label: "Refresh", shortcut: "r", run: () => void refreshDashboard() },
+    { label: "Refresh", shortcut: "r", run: () => void AppRuntime.runPromise(refreshDashboard()) },
     { label: "Settings", shortcut: "click", run: openSettingsPage },
     { label: "Help", shortcut: "?", run: openShortcutsDialog },
     { label: "Quit", shortcut: "q / esc", run: () => renderer.destroy() },
@@ -225,7 +237,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       shortcut: "o",
       disabled: !currentRow,
       run: () => {
-        if (currentRow) void openTmuxSession(currentRow)
+        if (currentRow) void AppRuntime.runPromise(openTmuxSession(currentRow))
       },
     },
     {
@@ -248,10 +260,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     },
   ]
   const serverMenuItems: MenuItem[] = [
-    ...globalStore.config.servers.map((server) => ({
+    ...globalStore.config.servers.map((server, index) => ({
       label: server.name,
       shortcut: server.url === globalStore.config.activeServerUrl ? "active" : "switch",
-      run: () => void settingsController.switchServer(server.url),
+      run: () => void AppRuntime.runPromise(settingsController.selectSettingsServer(index)),
     })),
     { label: "Add server", shortcut: "edit", run: openSettingsPage },
   ]
@@ -383,7 +395,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         permissionDialog: dashboardStore.permissionDialog
           ? {
               close: dashboardStore.closePermissionDialog,
-              decide: (reply) => void replyToPermission(reply),
+              decide: (reply) => void AppRuntime.runPromise(replyToPermission(reply)),
             }
           : null,
         promptDialog: dashboardStore.promptDialog
@@ -465,13 +477,13 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                 hasInterruptibleSelection: rowsToInterrupt.length > 0,
                 currentSessionId: currentRow?.id,
                 halfPage: halfPage(tableHeight),
-                refresh: () => void refreshDashboard(),
+                refresh: () => void AppRuntime.runPromise(refreshDashboard()),
                 openAddSession: openAddSessionDialog,
                 openDeleteSession: openDeleteSessionDialog,
                 openInterruptSession: openInterruptSessionDialog,
                 executeSelection,
                 openTmux: () => {
-                  if (currentRow) void openTmuxSession(currentRow)
+                  if (currentRow) void AppRuntime.runPromise(openTmuxSession(currentRow))
                 },
                 focusSearch: () => dashboardStore.setSearchFocused(true),
                 openHelp: openShortcutsDialog,
@@ -523,8 +535,10 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
                 moveServer: (delta) => {
                   const settingsPage = globalStore.settingsPage
                   if (!settingsPage || settingsPage.servers.length <= 1) return
-                  void settingsController.selectSettingsServer(
-                    nextIndex(settingsPage.selectedServerIndex, delta, settingsPage.servers.length),
+                  void AppRuntime.runPromise(
+                    settingsController.selectSettingsServer(
+                      nextIndex(settingsPage.selectedServerIndex, delta, settingsPage.servers.length),
+                    ),
                   )
                 },
               }
@@ -564,24 +578,31 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
   useEffect(() => {
     let disposed = false
-    void AppRuntime.runPromise(loadOrchConfig())
-      .then((loadedConfig) => {
-        if (disposed) return
-        const globalStoreSnapshot = globalStoreRef.current
-        if (globalStoreSnapshot.config.activeServerUrl !== loadedConfig.activeServerUrl) {
-          dashboardStoreRef.current.clearRowsByProject()
-        }
-        globalStoreSnapshot.setConfig(loadedConfig)
-      })
-      .catch((configError) => {
-        if (disposed) return
-        console.error("Failed to load config", configError)
-        globalStoreRef.current.addToast({
-          status: "error",
-          title: "Failed to load config",
-          detail: errorMessage(configError),
-        })
-      })
+    void AppRuntime.runPromise(
+      loadOrchConfig().pipe(
+        Effect.tap((loadedConfig) =>
+          Effect.sync(() => {
+            if (disposed) return
+            const globalStoreSnapshot = globalStoreRef.current
+            if (globalStoreSnapshot.config.activeServerUrl !== loadedConfig.activeServerUrl) {
+              dashboardStoreRef.current.clearRowsByProject()
+            }
+            globalStoreSnapshot.setConfig(loadedConfig)
+          }),
+        ),
+        Effect.catchAll((configError) =>
+          Effect.sync(() => {
+            if (disposed) return
+            console.error("Failed to load config", configError)
+            globalStoreRef.current.addToast({
+              status: "error",
+              title: "Failed to load config",
+              detail: errorMessage(configError),
+            })
+          }),
+        ),
+      ),
+    )
     return () => {
       disposed = true
     }
@@ -682,8 +703,18 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     globalStore.openSettingsPage()
   }
 
-  async function refreshDashboard() {
-    await Promise.all([refetchProjects(), Promise.resolve(dashboardStore.sessionListState.refetch?.())])
+  function refreshDashboard(): Effect.Effect<void> {
+    return Effect.tryPromise({
+      try: () => Promise.all([refetchProjects(), Promise.resolve(dashboardStore.sessionListState.refetch?.())]),
+      catch: (cause) => new DashboardRefreshError({ message: "Failed to refresh dashboard", cause }),
+    }).pipe(
+      Effect.asVoid,
+      Effect.catchAll((refreshError) =>
+        Effect.sync(() => {
+          console.error(refreshError.message, refreshError.cause)
+        }),
+      ),
+    )
   }
 
   function openMenu(menu: MenuId) {
@@ -795,7 +826,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         return dashboardStore.clearMultiSelection()
       case "open-selected-in-tmux":
         if (!currentRow) return false
-        void openTmuxSession(currentRow)
+        void AppRuntime.runPromise(openTmuxSession(currentRow))
         return true
       case "move-selection-down":
         dashboardStore.setSelection(
@@ -870,7 +901,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       case "open-help":
         return true
       case "refresh-sessions":
-        void refreshDashboard()
+        void AppRuntime.runPromise(refreshDashboard())
         return true
       case "toggle-console":
         renderer.console.toggle()
@@ -904,67 +935,73 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     openPromptDialog(row)
   }
 
-  async function replyToPermission(reply: "once" | "always" | "reject") {
+  function replyToPermission(reply: "once" | "always" | "reject"): Effect.Effect<void> {
     const dialog = dashboardStoreRef.current.permissionDialog
-    if (!dialog || dialog.responding) return
+    if (!dialog || dialog.responding) return Effect.void
 
     dashboardStoreRef.current.setPermissionResponding()
-    try {
-      await AppRuntime.runPromise(
-        replyPermissionRequest({
-          requestID: dialog.request.id,
-          reply,
-          directory: dialog.row.directory,
-          workspaceID: dialog.row.workspaceID,
-          serverUrl: globalStoreRef.current.config.activeServerUrl,
-        }),
-      )
+    return Effect.gen(function* () {
+      yield* replyPermissionRequest({
+        requestID: dialog.request.id,
+        reply,
+        directory: dialog.row.directory,
+        workspaceID: dialog.row.workspaceID,
+        serverUrl: globalStoreRef.current.config.activeServerUrl,
+      })
       dashboardStoreRef.current.closePermissionDialog()
       openPromptDialog({
         ...dialog.row,
         messages: dialog.row.messages.filter((message) => !message.permissionRequested),
         pendingPermissionRequests: [],
       })
-      await refreshDashboard()
-    } catch (permissionError) {
-      console.error("Failed to respond to permission request", permissionError)
-      const detail = errorMessage(permissionError)
-      dashboardStoreRef.current.setPermissionError(detail)
-      globalStoreRef.current.addToast({ status: "error", title: "Failed to respond to permission", detail })
-    }
+      yield* refreshDashboard()
+    }).pipe(
+      Effect.catchAll((permissionError) =>
+        Effect.sync(() => {
+          console.error("Failed to respond to permission request", permissionError)
+          const detail = errorMessage(permissionError)
+          dashboardStoreRef.current.setPermissionError(detail)
+          globalStoreRef.current.addToast({ status: "error", title: "Failed to respond to permission", detail })
+        }),
+      ),
+    )
   }
 
-  async function openTmuxSession(row: SessionRow) {
-    try {
-      try {
-        await AppRuntime.runPromise(
-          selectTuiSession({
-            sessionID: row.id,
-            directory: row.directory,
-            ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
-            serverUrl: globalStore.config.activeServerUrl,
+  function openTmuxSession(row: SessionRow): Effect.Effect<void> {
+    return Effect.gen(function* () {
+      yield* selectTuiSession({
+        sessionID: row.id,
+        directory: row.directory,
+        ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
+        serverUrl: globalStore.config.activeServerUrl,
+      }).pipe(
+        Effect.catchAll((tuiError) =>
+          Effect.sync(() => {
+            globalStore.addToast({
+              status: "error",
+              title: "Failed to switch opencode session",
+              detail: errorMessage(tuiError),
+            })
+            console.error("Failed to switch opencode session", tuiError)
           }),
-        )
-      } catch (tuiError) {
-        globalStore.addToast({
-          status: "error",
-          title: "Failed to switch opencode session",
-          detail: errorMessage(tuiError),
-        })
-        console.error("Failed to switch opencode session", tuiError)
-      }
+        ),
+      )
 
-      await AppRuntime.runPromise(openTmuxSessionForRow(row))
-    } catch (tmuxError) {
-      console.error("Failed to open tmux", tmuxError)
-      globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
-    }
+      yield* openTmuxSessionForRow(row)
+    }).pipe(
+      Effect.catchAll((tmuxError) =>
+        Effect.sync(() => {
+          console.error("Failed to open tmux", tmuxError)
+          globalStore.addToast({ status: "error", title: "Failed to open tmux", detail: errorMessage(tmuxError) })
+        }),
+      ),
+    )
   }
 
-  async function submitAddSession(value: string) {
+  function submitAddSession(value: string): Effect.Effect<void> {
     const trimmed = value.trim()
     const dialog = dashboardStore.addSessionDialog
-    if (!trimmed || !dialog || dialog.sending) return
+    if (!trimmed || !dialog || dialog.sending) return Effect.void
 
     let worktree = dialog.worktrees[dialog.worktreeIndex]
     const workspaceID = worktree ? worktree.workspaceID : dialog.workspaceID
@@ -976,15 +1013,13 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       : undefined
 
     dashboardStore.setAddSessionSending()
-    try {
+    return Effect.gen(function* () {
       if (!worktree) {
-        const created = await AppRuntime.runPromise(
-          createWorktree({
-            directory: dialog.projectDirectory,
-            ...(workspaceID !== undefined ? { workspaceID } : {}),
-            serverUrl: globalStore.config.activeServerUrl,
-          }),
-        )
+        const created = yield* createWorktree({
+          directory: dialog.projectDirectory,
+          ...(workspaceID !== undefined ? { workspaceID } : {}),
+          serverUrl: globalStore.config.activeServerUrl,
+        })
         worktree = {
           directory: created.directory,
           name: created.name,
@@ -998,23 +1033,25 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         return
       }
 
-      await AppRuntime.runPromise(
-        createSessionWithPrompt({
-          directory: worktree.directory,
-          workspaceID: worktree.workspaceID,
-          ...(selectedModel !== undefined ? { model: selectedModel } : {}),
-          text: trimmed,
-          serverUrl: globalStore.config.activeServerUrl,
-        }),
-      )
+      yield* createSessionWithPrompt({
+        directory: worktree.directory,
+        workspaceID: worktree.workspaceID,
+        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
+        text: trimmed,
+        serverUrl: globalStore.config.activeServerUrl,
+      })
       dashboardStore.closeAddSessionDialog()
-      await refreshDashboard()
-    } catch (createError) {
-      console.error("Failed to create session", createError)
-      const detail = errorMessage(createError)
-      dashboardStore.setAddSessionError(detail)
-      globalStore.addToast({ status: "error", title: "Failed to create session", detail })
-    }
+      yield* refreshDashboard()
+    }).pipe(
+      Effect.catchAll((createError) =>
+        Effect.sync(() => {
+          console.error("Failed to create session", createError)
+          const detail = errorMessage(createError)
+          dashboardStore.setAddSessionError(detail)
+          globalStore.addToast({ status: "error", title: "Failed to create session", detail })
+        }),
+      ),
+    )
   }
 
   function canRemoveSelectedAddSessionWorktree(): boolean {
@@ -1045,31 +1082,33 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     dashboardStore.closeDeleteWorktreeDialog()
 
-    void (async () => {
-      try {
-        await AppRuntime.runPromise(
-          removeWorktree({
-            projectDirectory: dialog.projectDirectory,
-            worktreeDirectory: dialog.worktree.directory,
-            ...(dialog.worktree.workspaceID !== undefined ? { workspaceID: dialog.worktree.workspaceID } : {}),
-            serverUrl: globalStore.config.activeServerUrl,
-          }),
-        )
+    void AppRuntime.runPromise(
+      Effect.gen(function* () {
+        yield* removeWorktree({
+          projectDirectory: dialog.projectDirectory,
+          worktreeDirectory: dialog.worktree.directory,
+          ...(dialog.worktree.workspaceID !== undefined ? { workspaceID: dialog.worktree.workspaceID } : {}),
+          serverUrl: globalStore.config.activeServerUrl,
+        })
         dashboardStore.removeAddSessionWorktree(dialog.worktree.directory)
         globalStore.updateToast(toastId, { status: "success", title: "Deleted worktree", detail: dialog.worktree.name })
-        await refreshDashboard()
-      } catch (removeError) {
-        console.error("Failed to delete worktree", removeError)
-        const detail = errorMessage(removeError)
-        dashboardStore.setAddSessionError(detail)
-        globalStore.updateToast(toastId, { status: "error", title: "Failed to delete worktree", detail })
-      }
-    })()
+        yield* refreshDashboard()
+      }).pipe(
+        Effect.catchAll((removeError) =>
+          Effect.sync(() => {
+            console.error("Failed to delete worktree", removeError)
+            const detail = errorMessage(removeError)
+            dashboardStore.setAddSessionError(detail)
+            globalStore.updateToast(toastId, { status: "error", title: "Failed to delete worktree", detail })
+          }),
+        ),
+      ),
+    )
   }
 
-  async function submitPrompt(value: string) {
+  function submitPrompt(value: string): Effect.Effect<void> {
     const trimmed = value.trim()
-    if (!trimmed || !dashboardStore.promptDialog || dashboardStore.promptDialog.sending) return
+    if (!trimmed || !dashboardStore.promptDialog || dashboardStore.promptDialog.sending) return Effect.void
 
     const row = dashboardStore.promptDialog.row
     const modelProvider = dashboardStore.promptDialog.modelProviders[dashboardStore.promptDialog.modelProviderIndex]
@@ -1080,25 +1119,27 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       : undefined
 
     dashboardStore.setPromptSending()
-    try {
-      await AppRuntime.runPromise(
-        sendPrompt({
-          sessionID: row.id,
-          directory: row.directory,
-          workspaceID: row.workspaceID,
-          ...(selectedModel !== undefined ? { model: selectedModel } : {}),
-          text: trimmed,
-          serverUrl: globalStore.config.activeServerUrl,
-        }),
-      )
+    return Effect.gen(function* () {
+      yield* sendPrompt({
+        sessionID: row.id,
+        directory: row.directory,
+        workspaceID: row.workspaceID,
+        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
+        text: trimmed,
+        serverUrl: globalStore.config.activeServerUrl,
+      })
       dashboardStore.setPromptSent()
-      await refreshDashboard()
-    } catch (promptError) {
-      console.error("Failed to send prompt", promptError)
-      const detail = errorMessage(promptError)
-      dashboardStore.setPromptError(detail)
-      globalStore.addToast({ status: "error", title: "Failed to send prompt", detail })
-    }
+      yield* refreshDashboard()
+    }).pipe(
+      Effect.catchAll((promptError) =>
+        Effect.sync(() => {
+          console.error("Failed to send prompt", promptError)
+          const detail = errorMessage(promptError)
+          dashboardStore.setPromptError(detail)
+          globalStore.addToast({ status: "error", title: "Failed to send prompt", detail })
+        }),
+      ),
+    )
   }
 
   function confirmDeleteSession() {
@@ -1115,34 +1156,35 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     dashboardStore.clearMultiSelection()
     dashboardStore.closeDeleteDialog()
 
-    void (async () => {
-      const results = await Promise.allSettled(
-        rows.map((row) =>
-          AppRuntime.runPromise(
+    void AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const results = yield* Effect.all(
+          rows.map((row) =>
             deleteSession({
               sessionID: row.id,
               directory: row.directory,
               workspaceID: row.workspaceID,
               serverUrl: globalStore.config.activeServerUrl,
-            }),
+            }).pipe(Effect.either),
           ),
-        ),
-      )
-      const failed = results.filter((result) => result.status === "rejected")
+          { concurrency: 8 },
+        )
+        const failed = results.filter(Either.isLeft)
 
-      if (failed.length === 0) {
-        globalStore.updateToast(toastId, { status: "success", title: `Deleted ${formatSessionCount(count)}` })
-      } else {
-        for (const result of failed) console.error("Failed to delete session", result.reason)
-        globalStore.updateToast(toastId, {
-          status: "error",
-          title: `Deleted ${count - failed.length} of ${count} sessions`,
-          detail: String(failed[0]?.reason ?? "Unknown delete error"),
-        })
-      }
+        if (failed.length === 0) {
+          globalStore.updateToast(toastId, { status: "success", title: `Deleted ${formatSessionCount(count)}` })
+        } else {
+          for (const result of failed) console.error("Failed to delete session", result.left)
+          globalStore.updateToast(toastId, {
+            status: "error",
+            title: `Deleted ${count - failed.length} of ${count} sessions`,
+            detail: String(failed[0]?.left ?? "Unknown delete error"),
+          })
+        }
 
-      await refreshDashboard()
-    })()
+        yield* refreshDashboard()
+      }),
+    )
   }
 
   function confirmInterruptSession() {
@@ -1159,34 +1201,35 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     dashboardStore.clearMultiSelection()
     dashboardStore.closeInterruptDialog()
 
-    void (async () => {
-      const results = await Promise.allSettled(
-        rows.map((row) =>
-          AppRuntime.runPromise(
+    void AppRuntime.runPromise(
+      Effect.gen(function* () {
+        const results = yield* Effect.all(
+          rows.map((row) =>
             interruptSession({
               sessionID: row.id,
               directory: row.directory,
               workspaceID: row.workspaceID,
               serverUrl: globalStore.config.activeServerUrl,
-            }),
+            }).pipe(Effect.either),
           ),
-        ),
-      )
-      const failed = results.filter((result) => result.status === "rejected")
+          { concurrency: 8 },
+        )
+        const failed = results.filter(Either.isLeft)
 
-      if (failed.length === 0) {
-        globalStore.updateToast(toastId, { status: "success", title: `Interrupted ${formatSessionCount(count)}` })
-      } else {
-        for (const result of failed) console.error("Failed to interrupt session", result.reason)
-        globalStore.updateToast(toastId, {
-          status: "error",
-          title: `Interrupted ${count - failed.length} of ${count} sessions`,
-          detail: String(failed[0]?.reason ?? "Unknown interrupt error"),
-        })
-      }
+        if (failed.length === 0) {
+          globalStore.updateToast(toastId, { status: "success", title: `Interrupted ${formatSessionCount(count)}` })
+        } else {
+          for (const result of failed) console.error("Failed to interrupt session", result.left)
+          globalStore.updateToast(toastId, {
+            status: "error",
+            title: `Interrupted ${count - failed.length} of ${count} sessions`,
+            detail: String(failed[0]?.left ?? "Unknown interrupt error"),
+          })
+        }
 
-      await refreshDashboard()
-    })()
+        yield* refreshDashboard()
+      }),
+    )
   }
 
   return {

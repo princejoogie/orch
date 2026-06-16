@@ -15,21 +15,22 @@ class SmokeError extends Data.TaggedError("SmokeError")<{
 }> {}
 
 const run = (cmd: readonly string[]) =>
-  Effect.try({
-    try: () => {
-      const proc = Bun.spawnSync({ cmd: [...cmd], cwd: root, stdout: "pipe", stderr: "pipe" })
-      const result = { stdout: proc.stdout.toString(), stderr: proc.stderr.toString() }
-      if (proc.exitCode !== 0) {
-        throw new Error(`Command failed (${proc.exitCode}): ${cmd.join(" ")}\n${result.stdout}${result.stderr}`)
-      }
-      return result
-    },
-    catch: (cause) => new SmokeError({ message: `Command failed: ${cmd.join(" ")}`, cause }),
+  Effect.gen(function* () {
+    const proc = yield* Effect.sync(() => Bun.spawnSync({ cmd: [...cmd], cwd: root, stdout: "pipe", stderr: "pipe" }))
+    const result = { stdout: proc.stdout.toString(), stderr: proc.stderr.toString() }
+    if (proc.exitCode !== 0) {
+      return yield* Effect.fail(
+        new SmokeError({
+          message: `Command failed (${proc.exitCode}): ${cmd.join(" ")}\n${result.stdout}${result.stderr}`,
+          cause: proc.exitCode,
+        }),
+      )
+    }
+    return result
   })
 
-function assert(condition: unknown, message: string): asserts condition {
-  if (!condition) throw new Error(message)
-}
+const ensure = (condition: boolean, message: string): Effect.Effect<void, SmokeError> =>
+  condition ? Effect.void : Effect.fail(new SmokeError({ message, cause: false }))
 
 const program = Effect.gen(function* () {
   yield* run(["bun", "run", "build"])
@@ -39,11 +40,14 @@ const program = Effect.gen(function* () {
   })
 
   const version = yield* run([binaryPath, "--version"])
-  assert(version.stdout.trim() === packageJson.version, `Expected ${packageJson.version}, got ${version.stdout.trim()}`)
+  yield* ensure(
+    version.stdout.trim() === packageJson.version,
+    `Expected ${packageJson.version}, got ${version.stdout.trim()}`,
+  )
 
   const help = yield* run([binaryPath, "--help"])
-  assert(help.stdout.includes("Usage:"), "Expected --help output to include Usage")
-  assert(help.stdout.includes("orch"), "Expected --help output to include binary name")
+  yield* ensure(help.stdout.includes("Usage:"), "Expected --help output to include Usage")
+  yield* ensure(help.stdout.includes("orch"), "Expected --help output to include binary name")
 })
 
 await AppRuntime.runPromise(program).catch((error) => {

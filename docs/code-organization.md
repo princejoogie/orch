@@ -11,6 +11,7 @@ This document defines where code belongs.
 - `src/keymap/`: keyboard parsing, dispatch, adapters, and app keymaps.
 - `src/store/`: Zustand stores for app-wide UI state and dashboard page state.
 - `src/config/`: orch config/state file paths, JSON persistence, config normalization, and shared UI/page constants.
+- `src/effect/`: shared Effect runtime bridge used by React, TUI, CLI, and scripts.
 - `src/lib/`: pure utilities and domain-agnostic helpers.
 - `src/opencode/`: opencode API client modules, snapshot loading, and related types.
 - `scripts/`: build, release, smoke, and maintenance scripts.
@@ -104,6 +105,8 @@ Generic keymap files stay reusable by modeling parsing and dispatch. App-specifi
 ## Data Layer
 
 `src/config/orch.ts` owns persisted orch configuration. Config is stored at `~/.config/orch/config.json`; generic app state helpers write below `~/.local/state/orch`.
+
+Effect is the app-owned async boundary. IO modules should expose typed Effect APIs with tagged error channels, while React Query, React effects, and CLI/script entrypoints bridge those programs to Promises through `src/effect/app-runtime.ts`.
 
 `src/opencode/client/` owns low-level API calls and groups them by OpenCode concern: sessions, permissions, models, worktrees, events, and dashboard snapshots. `src/opencode/client/index.ts` is the public import seam for OpenCode data; do not add a top-level `src/opencode.ts` barrel.
 

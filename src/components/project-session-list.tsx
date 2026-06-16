@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query"
+import { Data, Effect } from "effect"
 import { useEffect, useRef } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
 import { EMPTY_SESSION_ROWS, PROJECT_POLL_INTERVAL_MS } from "../config/constants.ts"
@@ -9,6 +10,10 @@ import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
 import { SectionView } from "./session-table.tsx"
+
+class ProjectSessionQueryError extends Data.TaggedError("ProjectSessionQueryError")<{
+  readonly message: string
+}> {}
 
 export function ProjectSessionList({ width }: { width: number }) {
   const controller = useDashboardControllerContext()
@@ -29,15 +34,20 @@ export function ProjectSessionList({ width }: { width: number }) {
     refetchInterval: PROJECT_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
     queryFn: ({ signal }) => {
-      if (!controller.activeTab) throw new Error("No project selected")
+      const activeTab = controller.activeTab
+      if (!activeTab) {
+        return AppRuntime.runPromise(Effect.fail(new ProjectSessionQueryError({ message: "No project selected" })), {
+          signal,
+        })
+      }
       return AppRuntime.runPromise(
         getProjectSessions({
           project: {
-            id: controller.activeTab.id,
-            title: controller.activeTab.title,
-            directory: controller.activeTab.directory,
-            worktreeName: controller.activeTab.worktrees[0]?.name ?? controller.activeTab.title,
-            worktrees: controller.activeTab.worktrees,
+            id: activeTab.id,
+            title: activeTab.title,
+            directory: activeTab.directory,
+            worktreeName: activeTab.worktrees[0]?.name ?? activeTab.title,
+            worktrees: activeTab.worktrees,
             updated: 0,
           },
           serverUrl: globalStore.config.activeServerUrl,

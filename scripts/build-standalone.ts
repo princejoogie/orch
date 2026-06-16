@@ -4,7 +4,7 @@ import { chmod, mkdir, rm, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { Data, Effect } from "effect"
 import { AppRuntime } from "../src/effect/app-runtime.ts"
-import { currentReleaseTargetId, findReleaseTarget, releaseTargets } from "./release-targets.ts"
+import { currentReleaseTargetId, findReleaseTarget, releaseTargets, type ReleaseTarget } from "./release-targets.ts"
 
 const root = process.cwd()
 const requestedTargetId = process.argv[2]
@@ -16,12 +16,18 @@ class StandaloneBuildError extends Data.TaggedError("StandaloneBuildError")<{
 }> {}
 
 const run = (cmd: readonly string[]) =>
-  Effect.try({
-    try: () => {
-      const proc = Bun.spawnSync({ cmd: [...cmd], cwd: root, stdout: "inherit", stderr: "inherit" })
-      if (proc.exitCode !== 0) throw new Error(`Command failed (${proc.exitCode}): ${cmd.join(" ")}`)
-    },
-    catch: (cause) => new StandaloneBuildError({ message: `Command failed: ${cmd.join(" ")}`, cause }),
+  Effect.gen(function* () {
+    const proc = yield* Effect.sync(() =>
+      Bun.spawnSync({ cmd: [...cmd], cwd: root, stdout: "inherit", stderr: "inherit" }),
+    )
+    if (proc.exitCode !== 0) {
+      return yield* Effect.fail(
+        new StandaloneBuildError({
+          message: `Command failed (${proc.exitCode}): ${cmd.join(" ")}`,
+          cause: proc.exitCode,
+        }),
+      )
+    }
   })
 
 function sha256(path: string): Effect.Effect<string, StandaloneBuildError> {
@@ -36,13 +42,17 @@ function sha256(path: string): Effect.Effect<string, StandaloneBuildError> {
   })
 }
 
-function selectedTargets() {
-  if (requestedTargetId === "all") return releaseTargets
+function selectedTargets(): Effect.Effect<readonly ReleaseTarget[], StandaloneBuildError> {
+  if (requestedTargetId === "all") return Effect.succeed(releaseTargets)
 
   const targetId = requestedTargetId ?? currentReleaseTargetId()
   const target = findReleaseTarget(targetId)
-  if (!target) throw new Error(`Unsupported standalone target: ${targetId ?? "unknown"}`)
-  return [target]
+  if (!target) {
+    return Effect.fail(
+      new StandaloneBuildError({ message: `Unsupported standalone target: ${targetId ?? "unknown"}`, cause: targetId }),
+    )
+  }
+  return Effect.succeed([target])
 }
 
 const program = Effect.gen(function* () {
@@ -58,7 +68,7 @@ const program = Effect.gen(function* () {
   const checksums: string[] = []
   const hostTargetId = currentReleaseTargetId()
 
-  for (const target of selectedTargets()) {
+  for (const target of yield* selectedTargets()) {
     const stageDir = join(releaseDir, target.id)
     const binaryPath = join(stageDir, "orch")
     const assetName = `orch-${target.id}.tar.gz`
@@ -84,15 +94,17 @@ const program = Effect.gen(function* () {
     })
 
     if (target.id === hostTargetId) {
-      yield* Effect.try({
-        try: () => {
-          const version = Bun.spawnSync({ cmd: [binaryPath, "--version"], cwd: root, stdout: "pipe", stderr: "pipe" })
-          if (version.exitCode !== 0) {
-            throw new Error(`Standalone smoke failed for ${target.id}: ${version.stderr.toString()}`)
-          }
-        },
-        catch: (cause) => new StandaloneBuildError({ message: `Standalone smoke failed for ${target.id}`, cause }),
-      })
+      const version = yield* Effect.sync(() =>
+        Bun.spawnSync({ cmd: [binaryPath, "--version"], cwd: root, stdout: "pipe", stderr: "pipe" }),
+      )
+      if (version.exitCode !== 0) {
+        return yield* Effect.fail(
+          new StandaloneBuildError({
+            message: `Standalone smoke failed for ${target.id}: ${version.stderr.toString()}`,
+            cause: version.exitCode,
+          }),
+        )
+      }
     }
 
     yield* run(["tar", "-czf", assetPath, "-C", stageDir, "orch"])
