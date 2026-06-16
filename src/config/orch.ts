@@ -1,4 +1,5 @@
 import { orchConfigPath, orchStatePath, readJsonFile, writeJsonFile } from "./persistence.ts"
+import { Effect } from "effect"
 
 export const DEFAULT_OPENCODE_SERVER_URL = "http://localhost:4096"
 
@@ -23,23 +24,27 @@ export function defaultOrchConfig(): OrchConfig {
   return { activeServerUrl: url, servers: [{ name: defaultServerName(url), url }] }
 }
 
-export async function loadOrchConfig(): Promise<OrchConfig> {
-  const raw = await readJsonFile<unknown>(orchConfigPath(), defaultOrchConfig())
-  return normalizeOrchConfig(raw)
+export function loadOrchConfig(): Effect.Effect<OrchConfig> {
+  return Effect.gen(function* () {
+    const raw = yield* readJsonFile<unknown>(orchConfigPath(), defaultOrchConfig())
+    return normalizeOrchConfig(raw)
+  })
 }
 
-export async function saveOrchConfig(config: OrchConfig): Promise<OrchConfig> {
-  const normalized = normalizeOrchConfig(config)
-  await writeJsonFile(orchConfigPath(), normalized)
-  return normalized
+export function saveOrchConfig(config: OrchConfig) {
+  return Effect.gen(function* () {
+    const normalized = normalizeOrchConfig(config)
+    yield* writeJsonFile(orchConfigPath(), normalized)
+    return normalized
+  })
 }
 
-export async function loadOrchState<T extends OrchState>(fallback: T): Promise<T> {
+export function loadOrchState<T extends OrchState>(fallback: T): Effect.Effect<T> {
   return readJsonFile<T>(orchStatePath(), fallback)
 }
 
-export async function saveOrchState<T extends OrchState>(state: T): Promise<void> {
-  await writeJsonFile(orchStatePath(), state)
+export function saveOrchState<T extends OrchState>(state: T) {
+  return writeJsonFile(orchStatePath(), state)
 }
 
 export function normalizeOrchConfig(value: unknown): OrchConfig {

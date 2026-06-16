@@ -11,6 +11,7 @@ import {
   SELECTION_SCROLL_EDGE_OFFSET,
 } from "../config/constants.ts"
 import { loadOrchConfig } from "../config/orch.ts"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import { useSettingsControllerContext } from "./use-settings-controller.tsx"
 import { useNow } from "./use-now.ts"
 import { useScrollFollowSelected } from "./use-scroll-follow-selected.ts"
@@ -562,7 +563,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
   useEffect(() => {
     let disposed = false
-    void loadOrchConfig()
+    void AppRuntime.runPromise(loadOrchConfig())
       .then((loadedConfig) => {
         if (disposed) return
         const globalStoreSnapshot = globalStoreRef.current

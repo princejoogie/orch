@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useRef, type ReactNode } from "react"
 import { normalizeServerUrl, saveOrchConfig, serverNameFromUrl, type OrchConfig } from "../config/orch.ts"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import { errorMessage } from "../lib/utils.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { useGlobalStore } from "../store/global.ts"
@@ -39,7 +40,7 @@ function useSettingsController(): SettingsController {
 
   const persistConfig = useCallback(async (nextConfig: OrchConfig): Promise<OrchConfig> => {
     const previousServerUrl = globalStoreRef.current.config.activeServerUrl
-    const savedConfig = await saveOrchConfig(nextConfig)
+    const savedConfig = await AppRuntime.runPromise(saveOrchConfig(nextConfig))
     if (savedConfig.activeServerUrl !== previousServerUrl) dashboardStoreRef.current.clearRowsByProject()
     globalStoreRef.current.setConfig(savedConfig)
     return savedConfig
