@@ -1,5 +1,6 @@
 import type { Agent, Provider } from "@opencode-ai/sdk/v2"
-import { opencodeClient, routeOptions } from "./base.ts"
+import { Effect } from "effect"
+import { opencodeCall, opencodeClient, requestOptions, routeOptions } from "./base.ts"
 
 export type ModelOption = {
   providerID: string
@@ -21,53 +22,53 @@ export type DefaultModelOption = {
   variant?: string | undefined
 }
 
-export async function loadDefaultModel(input: {
+export function loadDefaultModel(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<DefaultModelOption | undefined> {
+}) {
   const client = opencodeClient(input.serverUrl)
-  const [config, agents] = await Promise.all([
-    client.config.get(routeOptions(input), {
-      throwOnError: true,
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    }),
-    client.app.agents(routeOptions(input), {
-      throwOnError: true,
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    }),
-  ])
-  return defaultAgentModel(config.data.default_agent, agents.data) ?? parseModelConfig(config.data.model)
+  return Effect.gen(function* () {
+    const [config, agents] = yield* Effect.all(
+      [
+        opencodeCall("config.get", (signal) => client.config.get(routeOptions(input), requestOptions(input, signal))),
+        opencodeCall("app.agents", (signal) => client.app.agents(routeOptions(input), requestOptions(input, signal))),
+      ],
+      { concurrency: 2 },
+    )
+    return defaultAgentModel(config.data.default_agent, agents.data) ?? parseModelConfig(config.data.model)
+  })
 }
 
-export async function loadModelProviders(input: {
+export function loadModelProviders(input: {
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<ModelProviderOption[]> {
-  const result = await opencodeClient(input.serverUrl).config.providers(routeOptions(input), {
-    throwOnError: true,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
-  })
+}) {
+  return Effect.gen(function* () {
+    const result = yield* opencodeCall("config.providers", (signal) =>
+      opencodeClient(input.serverUrl).config.providers(routeOptions(input), requestOptions(input, signal)),
+    )
 
-  return result.data.providers
-    .map((provider: Provider) => {
-      const providerName = provider.name ?? provider.id
-      return {
-        id: provider.id,
-        name: providerName,
-        models: Object.entries(provider.models).map(([modelID, model]) => ({
-          providerID: provider.id,
-          providerName,
-          modelID,
-          name: model.name ?? modelID,
-          variants: Object.keys(model.variants ?? {}),
-        })),
-      }
-    })
-    .filter((provider) => provider.models.length > 0)
+    return result.data.providers
+      .map((provider: Provider) => {
+        const providerName = provider.name ?? provider.id
+        return {
+          id: provider.id,
+          name: providerName,
+          models: Object.entries(provider.models).map(([modelID, model]) => ({
+            providerID: provider.id,
+            providerName,
+            modelID,
+            name: model.name ?? modelID,
+            variants: Object.keys(model.variants ?? {}),
+          })),
+        }
+      })
+      .filter((provider) => provider.models.length > 0)
+  })
 }
 
 function parseModelConfig(value: string | undefined): DefaultModelOption | undefined {

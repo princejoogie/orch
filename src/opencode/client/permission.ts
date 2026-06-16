@@ -1,39 +1,45 @@
 import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+import { Effect } from "effect"
 import type { SessionHistoryMessage, SessionPermissionRequest } from "../types.ts"
-import { opencodeClient, routeOptions } from "./base.ts"
+import { opencodeCall, opencodeClient, requestOptions, routeOptions } from "./base.ts"
 
-export async function loadPendingPermissions(input: {
+export function loadPendingPermissions(input: {
   sessionID?: string | undefined
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<SessionPermissionRequest[]> {
-  const result = await opencodeClient(input.serverUrl).permission.list(routeOptions(input), {
-    throwOnError: true,
-    ...(input.signal !== undefined ? { signal: input.signal } : {}),
+}) {
+  return Effect.gen(function* () {
+    const result = yield* opencodeCall("permission.list", (signal) =>
+      opencodeClient(input.serverUrl).permission.list(routeOptions(input), requestOptions(input, signal)),
+    )
+    const requests = result.data.map(toSessionPermissionRequest)
+    return input.sessionID === undefined
+      ? requests
+      : requests.filter((request) => request.sessionID === input.sessionID)
   })
-  const requests = result.data.map(toSessionPermissionRequest)
-  return input.sessionID === undefined ? requests : requests.filter((request) => request.sessionID === input.sessionID)
 }
 
-export async function replyPermissionRequest(input: {
+export function replyPermissionRequest(input: {
   requestID: string
   reply: "once" | "always" | "reject"
   message?: string | undefined
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).permission.reply(
-    {
-      requestID: input.requestID,
-      reply: input.reply,
-      ...routeOptions(input),
-      ...(input.message !== undefined ? { message: input.message } : {}),
-    },
-    { throwOnError: true },
-  )
+}) {
+  return opencodeCall("permission.reply", (signal) =>
+    opencodeClient(input.serverUrl).permission.reply(
+      {
+        requestID: input.requestID,
+        reply: input.reply,
+        ...routeOptions(input),
+        ...(input.message !== undefined ? { message: input.message } : {}),
+      },
+      requestOptions(undefined, signal),
+    ),
+  ).pipe(Effect.asVoid)
 }
 
 export function formatPermissionRequests(requests: SessionPermissionRequest[]): string {

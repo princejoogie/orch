@@ -1,4 +1,6 @@
 import { performance } from "node:perf_hooks"
+import { Effect } from "effect"
+import { AppRuntime } from "../src/effect/app-runtime.ts"
 import { getSessions, opencodeServerUrl } from "../src/opencode/client/index.ts"
 
 const iterations = Number(Bun.argv.find((arg) => arg.startsWith("--iterations="))?.split("=")[1] ?? 20)
@@ -17,18 +19,21 @@ function report(name: string, values: number[]) {
   )
 }
 
-const snapshotTimes: number[] = []
-let rows = 0
+const program = Effect.gen(function* () {
+  const snapshotTimes: number[] = []
+  let rows = 0
 
-for (let i = 0; i < iterations; i += 1) {
-  const started = performance.now()
-  // Sequential on purpose: benchmark repeated polling cost, not parallel throughput.
-  // oxlint-disable-next-line no-await-in-loop
-  const snapshot = await getSessions({ limit })
-  rows = snapshot.rows.length
-  snapshotTimes.push(performance.now() - started)
-}
+  for (let i = 0; i < iterations; i += 1) {
+    const started = performance.now()
+    // Sequential on purpose: benchmark repeated polling cost, not parallel throughput.
+    const snapshot = yield* getSessions({ limit })
+    rows = snapshot.rows.length
+    snapshotTimes.push(performance.now() - started)
+  }
 
-console.log(`server=${serverUrl}`)
-console.log(`iterations=${iterations} limit=${limit} rows=${rows}`)
-report("snapshot", snapshotTimes)
+  console.log(`server=${serverUrl}`)
+  console.log(`iterations=${iterations} limit=${limit} rows=${rows}`)
+  report("snapshot", snapshotTimes)
+})
+
+await AppRuntime.runPromise(program)

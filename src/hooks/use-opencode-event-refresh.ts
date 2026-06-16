@@ -1,7 +1,10 @@
 import { useQueryClient } from "@tanstack/react-query"
+import { Effect, Stream } from "effect"
 import { useEffect } from "react"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import {
   dashboardRefreshScopeForEvent,
+  isAbortError,
   subscribeOpencodeEvents,
   type DashboardRefreshScope,
 } from "../opencode/client/index.ts"
@@ -41,18 +44,18 @@ export function useOpencodeEventRefresh(serverUrl: string): void {
       if (timer === undefined) timer = globalThis.setTimeout(flush, EVENT_REFRESH_DEBOUNCE_MS)
     }
 
-    void (async () => {
-      try {
-        const stream = await subscribeOpencodeEvents({ serverUrl, signal: abortController.signal })
-        for await (const event of stream) {
-          if (disposed) break
+    void AppRuntime.runPromise(
+      Stream.runForEach(Stream.unwrap(subscribeOpencodeEvents({ serverUrl })), (event) =>
+        Effect.sync(() => {
+          if (disposed) return
           const scope = dashboardRefreshScopeForEvent(event)
           if (scope) scheduleRefresh(scope)
-        }
-      } catch (eventError) {
-        if (!disposed && !isAbortError(eventError)) console.error("Failed to subscribe to opencode events", eventError)
-      }
-    })()
+        }),
+      ),
+      { signal: abortController.signal },
+    ).catch((eventError) => {
+      if (!disposed && !isAbortError(eventError)) console.error("Failed to subscribe to opencode events", eventError)
+    })
 
     return () => {
       disposed = true
@@ -60,8 +63,4 @@ export function useOpencodeEventRefresh(serverUrl: string): void {
       if (timer !== undefined) globalThis.clearTimeout(timer)
     }
   }, [queryClient, serverUrl])
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError"
 }

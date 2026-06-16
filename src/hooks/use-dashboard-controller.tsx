@@ -124,7 +124,8 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
   const projectsQuery = useQuery({
     queryKey: ["opencode-projects", globalStore.config.activeServerUrl],
-    queryFn: ({ signal }) => getProjects({ serverUrl: globalStore.config.activeServerUrl, signal }),
+    queryFn: ({ signal }) =>
+      AppRuntime.runPromise(getProjects({ serverUrl: globalStore.config.activeServerUrl }), { signal }),
   })
   const { refetch: refetchProjects } = projectsQuery
 
@@ -909,13 +910,15 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     dashboardStoreRef.current.setPermissionResponding()
     try {
-      await replyPermissionRequest({
-        requestID: dialog.request.id,
-        reply,
-        directory: dialog.row.directory,
-        workspaceID: dialog.row.workspaceID,
-        serverUrl: globalStoreRef.current.config.activeServerUrl,
-      })
+      await AppRuntime.runPromise(
+        replyPermissionRequest({
+          requestID: dialog.request.id,
+          reply,
+          directory: dialog.row.directory,
+          workspaceID: dialog.row.workspaceID,
+          serverUrl: globalStoreRef.current.config.activeServerUrl,
+        }),
+      )
       dashboardStoreRef.current.closePermissionDialog()
       openPromptDialog({
         ...dialog.row,
@@ -934,12 +937,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
   async function openTmuxSession(row: SessionRow) {
     try {
       try {
-        await selectTuiSession({
-          sessionID: row.id,
-          directory: row.directory,
-          ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
-          serverUrl: globalStore.config.activeServerUrl,
-        })
+        await AppRuntime.runPromise(
+          selectTuiSession({
+            sessionID: row.id,
+            directory: row.directory,
+            ...(row.workspaceID !== undefined ? { workspaceID: row.workspaceID } : {}),
+            serverUrl: globalStore.config.activeServerUrl,
+          }),
+        )
       } catch (tuiError) {
         globalStore.addToast({
           status: "error",
@@ -973,11 +978,13 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     dashboardStore.setAddSessionSending()
     try {
       if (!worktree) {
-        const created = await createWorktree({
-          directory: dialog.projectDirectory,
-          ...(workspaceID !== undefined ? { workspaceID } : {}),
-          serverUrl: globalStore.config.activeServerUrl,
-        })
+        const created = await AppRuntime.runPromise(
+          createWorktree({
+            directory: dialog.projectDirectory,
+            ...(workspaceID !== undefined ? { workspaceID } : {}),
+            serverUrl: globalStore.config.activeServerUrl,
+          }),
+        )
         worktree = {
           directory: created.directory,
           name: created.name,
@@ -991,13 +998,15 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
         return
       }
 
-      await createSessionWithPrompt({
-        directory: worktree.directory,
-        workspaceID: worktree.workspaceID,
-        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
-        text: trimmed,
-        serverUrl: globalStore.config.activeServerUrl,
-      })
+      await AppRuntime.runPromise(
+        createSessionWithPrompt({
+          directory: worktree.directory,
+          workspaceID: worktree.workspaceID,
+          ...(selectedModel !== undefined ? { model: selectedModel } : {}),
+          text: trimmed,
+          serverUrl: globalStore.config.activeServerUrl,
+        }),
+      )
       dashboardStore.closeAddSessionDialog()
       await refreshDashboard()
     } catch (createError) {
@@ -1038,12 +1047,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     void (async () => {
       try {
-        await removeWorktree({
-          projectDirectory: dialog.projectDirectory,
-          worktreeDirectory: dialog.worktree.directory,
-          ...(dialog.worktree.workspaceID !== undefined ? { workspaceID: dialog.worktree.workspaceID } : {}),
-          serverUrl: globalStore.config.activeServerUrl,
-        })
+        await AppRuntime.runPromise(
+          removeWorktree({
+            projectDirectory: dialog.projectDirectory,
+            worktreeDirectory: dialog.worktree.directory,
+            ...(dialog.worktree.workspaceID !== undefined ? { workspaceID: dialog.worktree.workspaceID } : {}),
+            serverUrl: globalStore.config.activeServerUrl,
+          }),
+        )
         dashboardStore.removeAddSessionWorktree(dialog.worktree.directory)
         globalStore.updateToast(toastId, { status: "success", title: "Deleted worktree", detail: dialog.worktree.name })
         await refreshDashboard()
@@ -1070,14 +1081,16 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
 
     dashboardStore.setPromptSending()
     try {
-      await sendPrompt({
-        sessionID: row.id,
-        directory: row.directory,
-        workspaceID: row.workspaceID,
-        ...(selectedModel !== undefined ? { model: selectedModel } : {}),
-        text: trimmed,
-        serverUrl: globalStore.config.activeServerUrl,
-      })
+      await AppRuntime.runPromise(
+        sendPrompt({
+          sessionID: row.id,
+          directory: row.directory,
+          workspaceID: row.workspaceID,
+          ...(selectedModel !== undefined ? { model: selectedModel } : {}),
+          text: trimmed,
+          serverUrl: globalStore.config.activeServerUrl,
+        }),
+      )
       dashboardStore.setPromptSent()
       await refreshDashboard()
     } catch (promptError) {
@@ -1105,12 +1118,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     void (async () => {
       const results = await Promise.allSettled(
         rows.map((row) =>
-          deleteSession({
-            sessionID: row.id,
-            directory: row.directory,
-            workspaceID: row.workspaceID,
-            serverUrl: globalStore.config.activeServerUrl,
-          }),
+          AppRuntime.runPromise(
+            deleteSession({
+              sessionID: row.id,
+              directory: row.directory,
+              workspaceID: row.workspaceID,
+              serverUrl: globalStore.config.activeServerUrl,
+            }),
+          ),
         ),
       )
       const failed = results.filter((result) => result.status === "rejected")
@@ -1147,12 +1162,14 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     void (async () => {
       const results = await Promise.allSettled(
         rows.map((row) =>
-          interruptSession({
-            sessionID: row.id,
-            directory: row.directory,
-            workspaceID: row.workspaceID,
-            serverUrl: globalStore.config.activeServerUrl,
-          }),
+          AppRuntime.runPromise(
+            interruptSession({
+              sessionID: row.id,
+              directory: row.directory,
+              workspaceID: row.workspaceID,
+              serverUrl: globalStore.config.activeServerUrl,
+            }),
+          ),
         ),
       )
       const failed = results.filter((result) => result.status === "rejected")

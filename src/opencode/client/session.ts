@@ -1,6 +1,14 @@
 import type { AssistantMessage, Part, Provider, SessionMessage, SessionMessagesResponse2 } from "@opencode-ai/sdk/v2"
+import { Effect } from "effect"
 import type { SessionHistoryMessage, SessionPermissionRequest } from "../types.ts"
-import { isAbortError, opencodeClient, routeOptions, type OpencodeClient } from "./base.ts"
+import {
+  isAbortError,
+  opencodeCall,
+  opencodeClient,
+  requestOptions,
+  routeOptions,
+  type OpencodeClient,
+} from "./base.ts"
 import { formatPermissionRequests, loadPendingPermissions, permissionHistoryMessage } from "./permission.ts"
 
 export const LATEST_MESSAGES_LIMIT = 20
@@ -20,111 +28,123 @@ export type LatestMessagePreview = {
   latestResponseError?: string | undefined
 }
 
-export async function sendPrompt(input: {
+export function sendPrompt(input: {
   sessionID: string
   text: string
   model?: { providerID: string; modelID: string; variant?: string | undefined } | undefined
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).session.promptAsync(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-      ...(input.model !== undefined
-        ? { model: { providerID: input.model.providerID, modelID: input.model.modelID } }
-        : {}),
-      ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
-      parts: [{ type: "text", text: input.text }],
-    },
-    { throwOnError: true },
-  )
+}) {
+  return opencodeCall("session.promptAsync", (signal) =>
+    opencodeClient(input.serverUrl).session.promptAsync(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+        ...(input.model !== undefined
+          ? { model: { providerID: input.model.providerID, modelID: input.model.modelID } }
+          : {}),
+        ...(input.model?.variant !== undefined ? { variant: input.model.variant } : {}),
+        parts: [{ type: "text", text: input.text }],
+      },
+      requestOptions(undefined, signal),
+    ),
+  ).pipe(Effect.asVoid)
 }
 
-export async function createSessionWithPrompt(input: {
+export function createSessionWithPrompt(input: {
   text: string
   directory: string
   model?: { providerID: string; modelID: string; variant?: string | undefined } | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<string> {
+}) {
   const client = opencodeClient(input.serverUrl)
-  const session = await client.session.create(
-    {
+  return Effect.gen(function* () {
+    const session = yield* opencodeCall("session.create", (signal) =>
+      client.session.create(
+        {
+          directory: input.directory,
+          ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
+          ...(input.model !== undefined
+            ? {
+                model: {
+                  providerID: input.model.providerID,
+                  id: input.model.modelID,
+                  ...(input.model.variant !== undefined ? { variant: input.model.variant } : {}),
+                },
+              }
+            : {}),
+        },
+        requestOptions(undefined, signal),
+      ),
+    )
+
+    yield* sendPrompt({
+      sessionID: session.data.id,
       directory: input.directory,
-      ...(input.workspaceID !== undefined ? { workspace: input.workspaceID } : {}),
-      ...(input.model !== undefined
-        ? {
-            model: {
-              providerID: input.model.providerID,
-              id: input.model.modelID,
-              ...(input.model.variant !== undefined ? { variant: input.model.variant } : {}),
-            },
-          }
-        : {}),
-    },
-    { throwOnError: true },
-  )
+      text: input.text,
+      ...(input.model !== undefined ? { model: input.model } : {}),
+      ...(input.workspaceID !== undefined ? { workspaceID: input.workspaceID } : {}),
+      ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
+    })
 
-  await sendPrompt({
-    sessionID: session.data.id,
-    directory: input.directory,
-    text: input.text,
-    ...(input.model !== undefined ? { model: input.model } : {}),
-    ...(input.workspaceID !== undefined ? { workspaceID: input.workspaceID } : {}),
-    ...(input.serverUrl !== undefined ? { serverUrl: input.serverUrl } : {}),
+    return session.data.id
   })
-
-  return session.data.id
 }
 
-export async function deleteSession(input: {
+export function deleteSession(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).session.delete(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-    },
-    { throwOnError: true },
-  )
+}) {
+  return opencodeCall("session.delete", (signal) =>
+    opencodeClient(input.serverUrl).session.delete(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+      },
+      requestOptions(undefined, signal),
+    ),
+  ).pipe(Effect.asVoid)
 }
 
-export async function interruptSession(input: {
+export function interruptSession(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).session.abort(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-    },
-    { throwOnError: true },
-  )
+}) {
+  return opencodeCall("session.abort", (signal) =>
+    opencodeClient(input.serverUrl).session.abort(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+      },
+      requestOptions(undefined, signal),
+    ),
+  ).pipe(Effect.asVoid)
 }
 
-export async function selectTuiSession(input: {
+export function selectTuiSession(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   serverUrl?: string | undefined
-}): Promise<void> {
-  await opencodeClient(input.serverUrl).tui.selectSession(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-    },
-    { throwOnError: true },
-  )
+}) {
+  return opencodeCall("tui.selectSession", (signal) =>
+    opencodeClient(input.serverUrl).tui.selectSession(
+      {
+        sessionID: input.sessionID,
+        ...routeOptions(input),
+      },
+      requestOptions(undefined, signal),
+    ),
+  ).pipe(Effect.asVoid)
 }
 
-export async function loadLatestMessages(input: {
+export function loadLatestMessages(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
@@ -132,109 +152,134 @@ export async function loadLatestMessages(input: {
   pendingPermissionRequests?: SessionPermissionRequest[] | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<LatestMessages> {
+}) {
   const limit = input.limit ?? LATEST_MESSAGES_LIMIT
   const client = opencodeClient(input.serverUrl)
-  const [result, preview] = await Promise.all([
-    client.session.messages(
-      {
-        sessionID: input.sessionID,
-        ...routeOptions(input),
-        limit,
-      },
-      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-    ),
-    loadLatestMessagePreview({
-      client,
-      sessionID: input.sessionID,
-      directory: input.directory,
-      workspaceID: input.workspaceID,
-      limit,
-      pendingPermissionRequests: input.pendingPermissionRequests ?? [],
-      signal: input.signal,
-    }).catch((previewError): LatestMessagePreview | undefined => {
-      if (isAbortError(previewError)) throw previewError
-      return undefined
-    }),
-  ])
+  return Effect.gen(function* () {
+    const [result, preview] = yield* Effect.all(
+      [
+        opencodeCall("session.messages", (signal) =>
+          client.session.messages(
+            {
+              sessionID: input.sessionID,
+              ...routeOptions(input),
+              limit,
+            },
+            requestOptions(input, signal),
+          ),
+        ),
+        loadLatestMessagePreview({
+          client,
+          sessionID: input.sessionID,
+          directory: input.directory,
+          workspaceID: input.workspaceID,
+          limit,
+          pendingPermissionRequests: input.pendingPermissionRequests ?? [],
+          signal: input.signal,
+        }).pipe(
+          Effect.catchAll((previewError) =>
+            isAbortError(previewError) ? Effect.fail(previewError) : Effect.succeed(undefined),
+          ),
+        ),
+      ],
+      { concurrency: 2 },
+    )
 
-  return mergeLatestPreview(extractLatestMessages(result.data, limit, input.pendingPermissionRequests ?? []), preview)
+    return mergeLatestPreview(extractLatestMessages(result.data, limit, input.pendingPermissionRequests ?? []), preview)
+  })
 }
 
-export async function loadSessionHistory(input: {
+export function loadSessionHistory(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   pendingPermissionRequests?: SessionPermissionRequest[] | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<SessionHistoryMessage[]> {
+}) {
   const client = opencodeClient(input.serverUrl)
-  const [result, pendingPermissionRequests] = await Promise.all([
-    client.session.messages(
-      {
-        sessionID: input.sessionID,
-        ...routeOptions(input),
-      },
-      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-    ),
-    input.pendingPermissionRequests !== undefined
-      ? Promise.resolve(input.pendingPermissionRequests)
-      : loadPendingPermissions({
-          sessionID: input.sessionID,
-          directory: input.directory,
-          workspaceID: input.workspaceID,
-          serverUrl: input.serverUrl,
-          signal: input.signal,
-        }).catch((permissionError): SessionPermissionRequest[] => {
-          if (isAbortError(permissionError)) throw permissionError
-          console.error("Failed to load pending permission requests", permissionError)
-          return []
-        }),
-  ])
+  return Effect.gen(function* () {
+    const [result, pendingPermissionRequests] = yield* Effect.all(
+      [
+        opencodeCall("session.messages", (signal) =>
+          client.session.messages(
+            {
+              sessionID: input.sessionID,
+              ...routeOptions(input),
+            },
+            requestOptions(input, signal),
+          ),
+        ),
+        input.pendingPermissionRequests !== undefined
+          ? Effect.succeed(input.pendingPermissionRequests)
+          : loadPendingPermissions({
+              sessionID: input.sessionID,
+              directory: input.directory,
+              workspaceID: input.workspaceID,
+              serverUrl: input.serverUrl,
+              signal: input.signal,
+            }).pipe(
+              Effect.catchAll((permissionError) => {
+                if (isAbortError(permissionError)) return Effect.fail(permissionError)
+                return Effect.sync(() => {
+                  console.error("Failed to load pending permission requests", permissionError)
+                  return []
+                })
+              }),
+            ),
+      ],
+      { concurrency: 2 },
+    )
 
-  return extractHistoryMessages(result.data, pendingPermissionRequests)
+    return extractHistoryMessages(result.data, pendingPermissionRequests)
+  })
 }
 
-export async function loadContextUsage(input: {
+export function loadContextUsage(input: {
   sessionID: string
   directory?: string | undefined
   workspaceID?: string | undefined
   historyAssistantMessage?: AssistantMessage | undefined
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
-}): Promise<{ tokens?: number; percent?: number }> {
+}) {
   const client = opencodeClient(input.serverUrl)
-  const [context, providers] = await Promise.all([
-    client.v2.session.context(
-      {
-        sessionID: input.sessionID,
-        ...routeOptions(input),
-      },
-      { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-    ),
-    client.config.providers(routeOptions(input), {
-      throwOnError: true,
-      ...(input.signal !== undefined ? { signal: input.signal } : {}),
-    }),
-  ])
+  return Effect.gen(function* () {
+    const [context, providers] = yield* Effect.all(
+      [
+        opencodeCall("v2.session.context", (signal) =>
+          client.v2.session.context(
+            {
+              sessionID: input.sessionID,
+              ...routeOptions(input),
+            },
+            requestOptions(input, signal),
+          ),
+        ),
+        opencodeCall("config.providers", (signal) =>
+          client.config.providers(routeOptions(input), requestOptions(input, signal)),
+        ),
+      ],
+      { concurrency: 2 },
+    )
 
-  const latestAssistant = latestAssistantMessage(context.data.data)
-  const fallbackAssistant = latestAssistant ? undefined : input.historyAssistantMessage
-  const tokens = latestAssistant
-    ? contextTokens(latestAssistant)
-    : fallbackAssistant
-      ? historyTokens(fallbackAssistant)
-      : undefined
-  const providerID = latestAssistant?.model.providerID ?? fallbackAssistant?.providerID
-  const modelID = latestAssistant?.model.id ?? fallbackAssistant?.modelID
-  const model =
-    providerID && modelID
-      ? providers.data.providers.find((provider: Provider) => provider.id === providerID)?.models[modelID]
-      : undefined
-  const limit = model?.limit.context
-  const percent = tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined
-  return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
+    const latestAssistant = latestAssistantMessage(context.data.data)
+    const fallbackAssistant = latestAssistant ? undefined : input.historyAssistantMessage
+    const tokens = latestAssistant
+      ? contextTokens(latestAssistant)
+      : fallbackAssistant
+        ? historyTokens(fallbackAssistant)
+        : undefined
+    const providerID = latestAssistant?.model.providerID ?? fallbackAssistant?.providerID
+    const modelID = latestAssistant?.model.id ?? fallbackAssistant?.modelID
+    const model =
+      providerID && modelID
+        ? providers.data.providers.find((provider: Provider) => provider.id === providerID)?.models[modelID]
+        : undefined
+    const limit = model?.limit.context
+    const percent = tokens !== undefined && limit ? Math.round((tokens / limit) * 100) : undefined
+    return { ...(tokens !== undefined ? { tokens } : {}), ...(percent !== undefined ? { percent } : {}) }
+  })
 }
 
 export function latestSessionMessagePreview(
@@ -311,7 +356,7 @@ function extractLatestMessages(
   }
 }
 
-async function loadLatestMessagePreview(input: {
+function loadLatestMessagePreview(input: {
   client: OpencodeClient
   sessionID: string
   directory?: string | undefined
@@ -319,18 +364,22 @@ async function loadLatestMessagePreview(input: {
   limit: number
   pendingPermissionRequests: SessionPermissionRequest[]
   signal?: AbortSignal | undefined
-}): Promise<LatestMessagePreview> {
-  const result = await input.client.v2.session.messages(
-    {
-      sessionID: input.sessionID,
-      ...routeOptions(input),
-      limit: input.limit,
-      order: "desc",
-    },
-    { throwOnError: true, ...(input.signal !== undefined ? { signal: input.signal } : {}) },
-  )
+}) {
+  return Effect.gen(function* () {
+    const result = yield* opencodeCall("v2.session.messages", (signal) =>
+      input.client.v2.session.messages(
+        {
+          sessionID: input.sessionID,
+          ...routeOptions(input),
+          limit: input.limit,
+          order: "desc",
+        },
+        requestOptions(input, signal),
+      ),
+    )
 
-  return latestSessionMessagePreview(result.data.data, input.pendingPermissionRequests)
+    return latestSessionMessagePreview(result.data.data, input.pendingPermissionRequests)
+  })
 }
 
 function mergeLatestPreview(messages: LatestMessages, preview: LatestMessagePreview | undefined): LatestMessages {

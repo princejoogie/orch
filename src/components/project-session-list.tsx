@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useEffect, useRef } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
 import { EMPTY_SESSION_ROWS, PROJECT_POLL_INTERVAL_MS } from "../config/constants.ts"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import { SECTIONS, errorMessage } from "../lib/utils.ts"
 import { getProjectSessions } from "../opencode/client/index.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
@@ -29,18 +30,20 @@ export function ProjectSessionList({ width }: { width: number }) {
     refetchIntervalInBackground: true,
     queryFn: ({ signal }) => {
       if (!controller.activeTab) throw new Error("No project selected")
-      return getProjectSessions({
-        project: {
-          id: controller.activeTab.id,
-          title: controller.activeTab.title,
-          directory: controller.activeTab.directory,
-          worktreeName: controller.activeTab.worktrees[0]?.name ?? controller.activeTab.title,
-          worktrees: controller.activeTab.worktrees,
-          updated: 0,
-        },
-        serverUrl: globalStore.config.activeServerUrl,
-        signal,
-      })
+      return AppRuntime.runPromise(
+        getProjectSessions({
+          project: {
+            id: controller.activeTab.id,
+            title: controller.activeTab.title,
+            directory: controller.activeTab.directory,
+            worktreeName: controller.activeTab.worktrees[0]?.name ?? controller.activeTab.title,
+            worktrees: controller.activeTab.worktrees,
+            updated: 0,
+          },
+          serverUrl: globalStore.config.activeServerUrl,
+        }),
+        { signal },
+      )
     },
   })
   const rows =

@@ -15,6 +15,7 @@ import {
 import { Button, ButtonRow, ButtonSpacer, DialogFooterActions, mouseAction } from "./ui/button.tsx"
 import { MenuDropdown, type MenuItem } from "./ui/menu-dropdown.tsx"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
+import { AppRuntime } from "../effect/app-runtime.ts"
 import {
   clamp,
   displayWorktreeName,
@@ -71,12 +72,14 @@ export function PromptDialog({ width, height }: { width: number; height: number 
     ],
     queryFn: ({ signal }) => {
       if (!state) return []
-      return loadModelProviders({
-        serverUrl: globalStore.config.activeServerUrl,
-        directory: state.row.directory,
-        workspaceID: state.row.workspaceID,
-        signal,
-      })
+      return AppRuntime.runPromise(
+        loadModelProviders({
+          serverUrl: globalStore.config.activeServerUrl,
+          directory: state.row.directory,
+          workspaceID: state.row.workspaceID,
+        }),
+        { signal },
+      )
     },
     enabled: state !== undefined,
   })
@@ -89,12 +92,14 @@ export function PromptDialog({ width, height }: { width: number; height: number 
     ],
     queryFn: ({ signal }) => {
       if (!state) return null
-      return loadDefaultModel({
-        serverUrl: globalStore.config.activeServerUrl,
-        directory: state.row.directory,
-        workspaceID: state.row.workspaceID,
-        signal,
-      }).then((model) => model ?? null)
+      return AppRuntime.runPromise(
+        loadDefaultModel({
+          serverUrl: globalStore.config.activeServerUrl,
+          directory: state.row.directory,
+          workspaceID: state.row.workspaceID,
+        }),
+        { signal },
+      ).then((model) => model ?? null)
     },
     enabled: state !== undefined,
   })
@@ -109,13 +114,15 @@ export function PromptDialog({ width, height }: { width: number; height: number 
     ],
     queryFn: ({ signal }) => {
       if (!state) return []
-      return loadSessionHistory({
-        sessionID: state.row.id,
-        directory: state.row.directory,
-        workspaceID: state.row.workspaceID,
-        serverUrl: globalStore.config.activeServerUrl,
-        signal,
-      })
+      return AppRuntime.runPromise(
+        loadSessionHistory({
+          sessionID: state.row.id,
+          directory: state.row.directory,
+          workspaceID: state.row.workspaceID,
+          serverUrl: globalStore.config.activeServerUrl,
+        }),
+        { signal },
+      )
     },
     enabled: state !== undefined,
   })
@@ -698,12 +705,14 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     ],
     queryFn: ({ signal }) => {
       if (!state || !addModelDirectory) return []
-      return loadModelProviders({
-        serverUrl: globalStore.config.activeServerUrl,
-        directory: addModelDirectory,
-        ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
-        signal,
-      })
+      return AppRuntime.runPromise(
+        loadModelProviders({
+          serverUrl: globalStore.config.activeServerUrl,
+          directory: addModelDirectory,
+          ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
+        }),
+        { signal },
+      )
     },
     enabled: state !== undefined,
   })
@@ -711,12 +720,14 @@ export function AddSessionDialog({ width, height }: { width: number; height: num
     queryKey: ["opencode-dialog-default-model", globalStore.config.activeServerUrl, addModelDirectory, addWorkspaceID],
     queryFn: ({ signal }) => {
       if (!state || !addModelDirectory) return null
-      return loadDefaultModel({
-        serverUrl: globalStore.config.activeServerUrl,
-        directory: addModelDirectory,
-        ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
-        signal,
-      }).then((model) => model ?? null)
+      return AppRuntime.runPromise(
+        loadDefaultModel({
+          serverUrl: globalStore.config.activeServerUrl,
+          directory: addModelDirectory,
+          ...(addWorkspaceID !== undefined ? { workspaceID: addWorkspaceID } : {}),
+        }),
+        { signal },
+      ).then((model) => model ?? null)
     },
     enabled: state !== undefined,
   })
