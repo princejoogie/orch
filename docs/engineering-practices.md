@@ -73,16 +73,18 @@ Recoverable dialog failures should be visible in the UI that can recover from th
 
 ## Failed Fixes And Bug Reports
 
-When a user reports that a behavior does not work, or that a previous fix did not resolve the issue, reproduce the issue before changing code. If the issue cannot be reproduced, stop and report the attempted reproduction steps instead of changing code.
+When a user reports that a behavior does not work, or that a previous fix did not resolve the issue, reproduce the issue before changing code. If the issue cannot be reproduced, stop and report the attempted reproduction steps instead of changing code. Do not patch a plausible cause just because the code looks suspicious.
 
 Required flow:
 
-1. Run the smallest realistic reproduction in the relevant surface, such as `termctrl` for TUI behavior.
-2. Verify the reported failure is visible or otherwise observable.
+1. Run the smallest realistic reproduction in the relevant surface.
+2. For TUI behavior, use `termctrl` and capture the visible failure with `termctrl show`.
 3. If the failure cannot be reproduced, do not proceed with a code change.
 4. Use the reproduced behavior to identify the state transition, event, or data path causing the failure.
 5. Make the smallest correct code change.
 6. Repeat the same reproduction steps as verification before relying on broader checks.
+
+For OpenCode server issues, use the visible TUI state as the source of truth and use server logs only as supporting evidence. Serve logs live at `~/.local/state/opencode/serve.out.log` and `~/.local/state/opencode/serve.err.log`; detailed crash logs are usually referenced from those files under `~/.local/share/opencode/log/`.
 
 ## User-Facing Commands
 

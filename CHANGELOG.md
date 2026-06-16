@@ -1,5 +1,14 @@
 # orch
 
+## 1.4.0
+
+### Minor Changes
+
+- Fix event-driven dashboard refresh by subscribing to OpenCode's global event stream, so completed sessions leave `Working` without manual refresh.
+- Keep project-session polling active in terminal/background contexts as a fallback for missed OpenCode events.
+- Tighten bug-report guidance around visible `termctrl` reproduction and OpenCode serve-log correlation.
+- Limit project snapshot discovery to the recent two-day session window.
+
 ## 1.3.0
 
 ### Minor Changes

@@ -1,16 +1,27 @@
-import type { Event as OpencodeEvent } from "@opencode-ai/sdk/v2"
 import { opencodeClient } from "./base.ts"
 
 export type DashboardRefreshScope = "sessions" | "projects" | "all"
+export type OpencodeEvent = { type: string }
+export type OpencodeEventStreamItem = OpencodeEvent | { payload: OpencodeEvent }
 
 export async function subscribeOpencodeEvents(input: {
   serverUrl?: string | undefined
   signal?: AbortSignal | undefined
 }): Promise<AsyncGenerator<OpencodeEvent, void, unknown>> {
-  const events = await opencodeClient(input.serverUrl).event.subscribe(undefined, {
+  const events = await opencodeClient(input.serverUrl).global.event({
     ...(input.signal !== undefined ? { signal: input.signal } : {}),
   })
-  return events.stream
+  return opencodeEventStream(events.stream)
+}
+
+export function opencodeEventPayload(event: OpencodeEventStreamItem): OpencodeEvent {
+  return "payload" in event ? event.payload : event
+}
+
+async function* opencodeEventStream(
+  stream: AsyncIterable<OpencodeEventStreamItem>,
+): AsyncGenerator<OpencodeEvent, void, unknown> {
+  for await (const event of stream) yield opencodeEventPayload(event)
 }
 
 export function dashboardRefreshScopeForEvent(event: OpencodeEvent): DashboardRefreshScope | undefined {

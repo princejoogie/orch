@@ -26,6 +26,7 @@ export function ProjectSessionList({ width }: { width: number }) {
     queryKey: ["opencode-project-sessions", globalStore.config.activeServerUrl, controller.activeTab?.id],
     enabled: controller.activeTab !== undefined,
     refetchInterval: PROJECT_POLL_INTERVAL_MS,
+    refetchIntervalInBackground: true,
     queryFn: ({ signal }) => {
       if (!controller.activeTab) throw new Error("No project selected")
       return getProjectSessions({

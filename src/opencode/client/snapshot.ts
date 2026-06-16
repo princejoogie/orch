@@ -18,7 +18,7 @@ import { DEFAULT_LIMIT, isAbortError, opencodeClient, opencodeServerUrl, type Op
 import { formatPermissionRequests, loadPendingPermissions } from "./permission.ts"
 import { loadContextUsage, loadLatestMessages } from "./session.ts"
 
-const PROJECT_SESSION_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
+const PROJECT_SESSION_WINDOW_MS = 2 * 24 * 60 * 60 * 1000
 const PROJECT_COPY_REFRESH_TIMEOUT_MS = 5_000
 
 export async function getSessions(
