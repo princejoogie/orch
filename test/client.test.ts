@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage } from "@opencode-ai/sdk/v2"
-import { latestSessionMessagePreview } from "../src/opencode/client/index.ts"
+import { Effect } from "effect"
+import { latestSessionMessagePreview, opencodeCall, streamOptions } from "../src/opencode/client/index.ts"
 
 const userMessage = (id: string, text: string, created = 0): Extract<SessionMessage, { type: "user" }> => ({
   id,
@@ -64,5 +65,27 @@ describe("latest session message preview", () => {
       userMessage: "older prompt",
       latestResponseError: "request failed",
     })
+  })
+})
+
+describe("opencode client boundary", () => {
+  test("preserves external error details", async () => {
+    const error = await Effect.runPromise(
+      Effect.flip(opencodeCall("session.promptAsync", () => Promise.reject(new Error("authentication failed")))),
+    )
+
+    expect(error.message).toBe("OpenCode session.promptAsync failed: authentication failed")
+  })
+
+  test("cancels SSE retry sleep when the request is aborted", async () => {
+    const external = new AbortController()
+    const runtime = new AbortController()
+    const options = streamOptions({ signal: external.signal }, runtime.signal)
+    const sleep = options.sseSleepFn(30_000)
+
+    external.abort()
+
+    await sleep
+    expect(options.signal.aborted).toBe(true)
   })
 })

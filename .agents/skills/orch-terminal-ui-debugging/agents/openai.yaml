@@ -1,0 +1,4 @@
+interface:
+  display_name: "Orch Terminal UI Debugging"
+  short_description: "Reproduce and fix orch TUI bugs with termctrl evidence."
+  default_prompt: "Debug an orch terminal UI bug by reproducing it with termctrl, correlating logs or API state only after visible evidence, and verifying the same scenario after the fix."

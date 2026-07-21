@@ -15,6 +15,7 @@
 
 ## Docs
 
+- `.agents/skills/orch-terminal-ui-debugging/SKILL.md`: project-local skill for debugging visible TUI behavior with `termctrl` evidence before patching.
 - `docs/README.md`: docs index and maintenance rule.
 - `docs/engineering-practices.md`: implementation, TypeScript, state, errors, and review expectations.
 - `docs/code-organization.md`: source ownership and module boundaries.

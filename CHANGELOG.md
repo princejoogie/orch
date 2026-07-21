@@ -1,5 +1,13 @@
 # orch
 
+## 1.5.0
+
+### Minor Changes
+
+- Migrate app-owned async workflows, OpenCode data access, configuration persistence, TUI and tmux operations, and package scripts to Effect with typed error channels and a shared runtime.
+- Upgrade `@opencode-ai/sdk` to 1.18.4 and explicitly close its global event stream so event-driven dashboard refresh does not prevent clean Ctrl-C shutdown.
+- Add a live `termctrl` smoke test for OpenCode event refresh and shutdown, plus project-local TUI debugging guidance built around visible terminal evidence.
+
 ## 1.4.0
 
 ### Minor Changes

@@ -12,6 +12,7 @@ Primary scripts in `package.json`:
 - `bun run lint`: oxlint gate over `src/`, `scripts/`, and `test/`.
 - `bun run test`: Bun tests.
 - `bun run test:e2e:git-dummy`: opt-in termctrl e2e smoke against the local `git-dummy` OpenCode fixture.
+- `bun run test:e2e:orch-live`: opt-in live termctrl smoke against the current `orch` project; creates a real `hi` session to verify event refresh and Ctrl-C shutdown.
 - `bun run package:smoke`: builds the binary and checks `--help`/`--version`.
 - `bun run build:standalone`: creates release tarballs and `.sha256` files for the current or requested target.
 
@@ -115,6 +116,8 @@ Prefer testing extracted pure functions over driving the terminal renderer.
 Use `termctrl` for end-to-end checks that depend on visible OpenTUI behavior. Prefer named sessions for multi-step interaction, and always stop the session when finished.
 
 `bun run test:e2e:git-dummy` builds `dist/orch`, starts it in a `termctrl` OpenTUI session, selects the `git-dummy` project fixture, and verifies the visible dashboard, menus, search, settings, add-session dialog, prompt dialog, shortcuts help, and project cycling. It is not part of `bun run check` or CI because it requires a live OpenCode server with the local fixture data.
+
+`bun run test:e2e:orch-live` builds `dist/orch`, starts the current `orch` project in `termctrl`, creates a real external `hi` session through the OpenCode API, waits for the visible session count to update before the 30s fallback poll interval, then sends Ctrl-C and verifies the process exits. It mutates the live OpenCode project and should only be run when that is acceptable.
 
 Useful overrides:
 

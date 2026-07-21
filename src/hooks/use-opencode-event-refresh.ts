@@ -1,11 +1,12 @@
 import { useQueryClient } from "@tanstack/react-query"
-import { Effect, Stream } from "effect"
+import { Effect } from "effect"
 import { useEffect } from "react"
 import { AppRuntime } from "../effect/app-runtime.ts"
 import {
   dashboardRefreshScopeForEvent,
   isAbortError,
-  subscribeOpencodeEvents,
+  openOpencodeEventStream,
+  opencodeClientError,
   type DashboardRefreshScope,
 } from "../opencode/client/index.ts"
 
@@ -20,6 +21,7 @@ export function useOpencodeEventRefresh(serverUrl: string): void {
     let timer: ReturnType<typeof globalThis.setTimeout> | undefined
     let refreshProjects = false
     let refreshSessions = false
+    let closeEventStream: Effect.Effect<void> | undefined
 
     const flush = () => {
       timer = undefined
@@ -45,13 +47,21 @@ export function useOpencodeEventRefresh(serverUrl: string): void {
     }
 
     void AppRuntime.runPromise(
-      Stream.runForEach(Stream.unwrap(subscribeOpencodeEvents({ serverUrl })), (event) =>
-        Effect.sync(() => {
-          if (disposed) return
-          const scope = dashboardRefreshScopeForEvent(event)
-          if (scope) scheduleRefresh(scope)
-        }),
-      ),
+      Effect.gen(function* () {
+        const subscription = yield* openOpencodeEventStream({ serverUrl, signal: abortController.signal })
+        closeEventStream = subscription.close
+
+        yield* Effect.tryPromise({
+          try: async () => {
+            for await (const event of subscription.stream) {
+              if (disposed) return
+              const scope = dashboardRefreshScopeForEvent(event)
+              if (scope) scheduleRefresh(scope)
+            }
+          },
+          catch: (cause) => opencodeClientError("global.event.stream", cause),
+        })
+      }),
       { signal: abortController.signal },
     ).catch((eventError) => {
       if (!disposed && !isAbortError(eventError)) console.error("Failed to subscribe to opencode events", eventError)
@@ -60,6 +70,7 @@ export function useOpencodeEventRefresh(serverUrl: string): void {
     return () => {
       disposed = true
       abortController.abort()
+      void AppRuntime.runPromise(closeEventStream ?? Effect.void)
       if (timer !== undefined) globalThis.clearTimeout(timer)
     }
   }, [queryClient, serverUrl])
