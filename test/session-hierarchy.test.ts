@@ -73,6 +73,26 @@ describe("session hierarchy", () => {
     expect(countLane(rows, "needs-input", now)).toBe(2)
   })
 
+  test("elevates a working family when a child needs input", () => {
+    const parent = row("parent", "working")
+    const child = row("child", "working", { parentID: parent.id })
+    child.pendingPermissionRequests = [
+      {
+        id: "permission",
+        sessionID: child.id,
+        permission: "bash",
+        patterns: ["git status"],
+        summary: "Permission requested: bash git status",
+      },
+    ]
+    const rows = [parent, child]
+    const lanes = sessionRowLanes(rows, now)
+
+    expect(projectRowsBySection(rows, lanes)["needs-input"].map((item) => item.id)).toEqual(["parent", "child"])
+    expect(countLane(rows, "working", now)).toBe(0)
+    expect(countLane(rows, "needs-input", now)).toBe(2)
+  })
+
   test("uses each row's own lane and zero depth for malformed parent cycles", () => {
     const first = row("first", "working", { parentID: "second" })
     const second = row("second", "completed", { parentID: "first" })

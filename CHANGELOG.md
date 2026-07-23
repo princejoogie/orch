@@ -1,9 +1,10 @@
 # orch
 
-## 1.5.1
+## 1.6.0
 
-### Patch Changes
+### Minor Changes
 
+- Group visible subagent sessions directly below their parents with lane-aware indentation and consistent dashboard counters.
 - Add project-local OpenCode references for the OpenCode SDK and Effect source repositories.
 - Update compatible runtime and toolchain dependencies, including React, React Query, Effect, Zustand, and Oxlint.
 

@@ -13,6 +13,7 @@ export function rowInLane(row: SessionRow, status: LaneStatus, now: Date | numbe
 export function sessionRowLanes(rows: readonly SessionRow[], now: Date | number): Map<string, LaneStatus> {
   const rowsById = new Map(rows.map((row) => [row.id, row]))
   const laneById = new Map<string, LaneStatus>()
+  const cycleIds = new Set<string>()
   const stack: SessionRow[] = []
   const stackIndexById = new Map<string, number>()
 
@@ -22,7 +23,10 @@ export function sessionRowLanes(rows: readonly SessionRow[], now: Date | number)
 
     const cycleIndex = stackIndexById.get(row.id)
     if (cycleIndex !== undefined) {
-      for (const member of stack.slice(cycleIndex)) laneById.set(member.id, sessionOwnLane(member, now))
+      for (const member of stack.slice(cycleIndex)) {
+        cycleIds.add(member.id)
+        laneById.set(member.id, sessionOwnLane(member, now))
+      }
       return laneById.get(row.id) ?? sessionOwnLane(row, now)
     }
 
@@ -41,6 +45,34 @@ export function sessionRowLanes(rows: readonly SessionRow[], now: Date | number)
   }
 
   for (const row of rows) resolveLane(row)
+
+  const familyById = new Map<string, string>()
+  const resolveFamily = (row: SessionRow): string => {
+    const cached = familyById.get(row.id)
+    if (cached) return cached
+
+    const parent = row.parentID ? rowsById.get(row.parentID) : undefined
+    const familyID =
+      parent && !cycleIds.has(row.id) && !cycleIds.has(parent.id) && laneById.get(parent.id) !== "completed"
+        ? resolveFamily(parent)
+        : row.id
+    familyById.set(row.id, familyID)
+    return familyID
+  }
+
+  const families = new Map<string, SessionRow[]>()
+  for (const row of rows) {
+    const familyID = resolveFamily(row)
+    const family = families.get(familyID) ?? []
+    family.push(row)
+    families.set(familyID, family)
+  }
+
+  for (const family of families.values()) {
+    if (!family.some((row) => sessionOwnLane(row, now) === "needs-input")) continue
+    for (const row of family) laneById.set(row.id, "needs-input")
+  }
+
   return laneById
 }
 
