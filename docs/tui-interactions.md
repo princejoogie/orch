@@ -45,6 +45,7 @@ OpenTUI focus can trigger built-in widget behavior. That matters for scrollboxes
 Mouse support should mirror keyboard selection, not create a second state model.
 
 - Rows support hover, click-to-select, and double-click to prompt the selected session.
+- Session rows keep their lane behavior, but child sessions should render slightly indented and directly below their parent when both rows are visible in the same lane. Visible child sessions follow a non-completed parent's lane so working and needs-input families move together.
 - Lane titles support click-to-select and double-click to collapse or expand the lane; keyboard `enter` does the same for the selected lane.
 - Project tabs support hover and click-to-select. The active project shows indented worktree filter rows when it has multiple worktrees; those rows support hover and click-to-select. Selecting the project row clears the worktree filter and shows sessions from every worktree.
 - Dialog options support click selection where useful.

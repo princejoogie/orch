@@ -60,6 +60,7 @@ export function SectionView({
   active,
   collapsed,
   width,
+  rowDepthById,
   hoveredRowId,
   selectedSessionIds,
   multiSelectActive,
@@ -76,6 +77,7 @@ export function SectionView({
   active: boolean
   collapsed: boolean
   width: number
+  rowDepthById: Record<string, number>
   hoveredRowId?: string | undefined
   selectedSessionIds: ReadonlySet<string>
   multiSelectActive: boolean
@@ -132,6 +134,7 @@ export function SectionView({
             multiSelectActive={multiSelectActive}
             worktreeColors={worktreeColors}
             width={width}
+            depth={rowDepthById[row.id] ?? 0}
             onHover={(hovered) => onRowHover(hovered ? row.id : undefined)}
             onSelect={() => onRowSelect({ type: "row", section: section.status, index, sessionId: row.id })}
             onClick={() => onRowClick(row)}
@@ -150,6 +153,7 @@ function SessionItem({
   multiSelectActive,
   worktreeColors,
   width,
+  depth,
   onHover,
   onSelect,
   onClick,
@@ -162,6 +166,7 @@ function SessionItem({
   multiSelectActive: boolean
   worktreeColors: Record<string, string>
   width: number
+  depth: number
   onHover: (hovered: boolean) => void
   onSelect: () => void
   onClick: () => void
@@ -171,6 +176,8 @@ function SessionItem({
   const worktreeColor = worktreeColors[row.worktreeName] ?? theme.textMuted
   const worktreeName = displayWorktreeName(row.worktreeName)
   const hasResponseError = row.pendingPermissionRequests.length === 0 && Boolean(row.latestResponseError)
+  const indentWidth = Math.min(Math.max(0, depth) * 2, Math.max(0, titleWidth - 8))
+  const visibleTitleWidth = Math.max(1, titleWidth - indentWidth)
   const backgroundColor = selected
     ? theme.backgroundElement
     : checked
@@ -203,8 +210,9 @@ function SessionItem({
         content={multiSelectActive ? `${checked ? "☑" : "☐"} ` : `${rowMarker(row, section, now)} `}
         style={{ fg: multiSelectActive && checked ? theme.primary : rowMarkerColor(row, section.status) }}
       />
+      {indentWidth > 0 ? <text content={" ".repeat(indentWidth)} style={{ fg: theme.textMuted }} /> : null}
       <text
-        content={truncate(row.title, titleWidth).padEnd(titleWidth)}
+        content={truncate(row.title, visibleTitleWidth).padEnd(visibleTitleWidth)}
         style={{ fg: theme.text, ...(selected ? { attributes: TextAttributes.BOLD } : {}) }}
       />
       <text content={gap} style={{ fg: selected ? theme.text : theme.textMuted }} />

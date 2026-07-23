@@ -31,6 +31,7 @@ export type SessionModel = {
 
 export type SessionRow = {
   id: string
+  parentID?: string | undefined
   title: string
   latestMessage: string
   latestUserMessage: string

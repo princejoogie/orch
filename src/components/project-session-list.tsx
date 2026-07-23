@@ -133,6 +133,7 @@ export function ProjectSessionList({ width }: { width: number }) {
           active={controller.activeSection === section.status}
           collapsed={Boolean(dashboardStore.collapsedSections[section.status])}
           width={width}
+          rowDepthById={controller.rowDepthById}
           hoveredRowId={dashboardStore.hoveredRowId}
           selectedSessionIds={dashboardStore.selectedSessionIds}
           multiSelectActive={dashboardStore.visualMode || dashboardStore.selectedSessionIds.size > 0}

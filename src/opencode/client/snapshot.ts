@@ -482,6 +482,7 @@ function toRow(
   const permissionMessage = formatPermissionRequests(pendingPermissionRequests)
   return {
     id: session.id,
+    ...(session.parentID !== undefined ? { parentID: session.parentID } : {}),
     title: session.title,
     latestMessage: permissionMessage || details?.latestMessage || "",
     latestUserMessage: details?.latestUserMessage ?? "",

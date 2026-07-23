@@ -1,7 +1,8 @@
 import { TextAttributes } from "@opentui/core"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
+import { countLane } from "../lib/session-hierarchy.ts"
+import { shortcutHintLine } from "../lib/utils.ts"
 import { mouseAction } from "./ui/button.tsx"
-import { countLane, shortcutHintLine } from "../lib/utils.ts"
 import { useGlobalStore } from "../store/global.ts"
 import { theme } from "../theme.ts"
 

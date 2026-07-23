@@ -19,6 +19,7 @@ import { useScrollFollowSelected } from "./use-scroll-follow-selected.ts"
 import { appKeymap } from "../keymap/dashboard.ts"
 import { useOpenTuiSubscribe } from "../keymap/opentui-adapter.ts"
 import { useKeymap } from "../keymap/react.ts"
+import { projectRowsBySection, sessionRowDepths, sessionRowLanes } from "../lib/session-hierarchy.ts"
 import { useOpencodeEventRefresh } from "./use-opencode-event-refresh.ts"
 import {
   moveSelection,
@@ -26,7 +27,6 @@ import {
   normalizeSelection,
   nextIndex,
   projectTabs,
-  rowInLane,
   SECTIONS,
   selectedRow,
   selectionEdge,
@@ -71,6 +71,7 @@ export type DashboardController = {
   activeTabRowsLoaded: boolean
   activeProjectRows: SessionRow[]
   rowsBySection: Record<LaneStatus, SessionRow[]>
+  rowDepthById: Record<string, number>
   activeSection: LaneStatus
   selection: Selection
   actionsMenuItems: MenuItem[]
@@ -184,7 +185,9 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
       ),
     [activeProjectRows, activeWorktree, dashboardStore.searchValue],
   )
-  const rowsBySection = useMemo(() => projectRowsBySection(filteredRows, now), [filteredRows, now])
+  const laneById = useMemo(() => sessionRowLanes(activeProjectRows, now), [activeProjectRows, now])
+  const rowDepthById = useMemo(() => sessionRowDepths(filteredRows, laneById), [filteredRows, laneById])
+  const rowsBySection = useMemo(() => projectRowsBySection(filteredRows, laneById), [filteredRows, laneById])
   const resolvedSelection = useMemo(
     () => normalizeSelection(dashboardStore.selection, rowsBySection, dashboardStore.collapsedSections),
     [dashboardStore.collapsedSections, dashboardStore.selection, rowsBySection],
@@ -1247,6 +1250,7 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     activeTabRowsLoaded,
     activeProjectRows,
     rowsBySection,
+    rowDepthById,
     activeSection,
     selection: resolvedSelection,
     actionsMenuItems,
@@ -1263,14 +1267,6 @@ function useDashboardController({ tableHeight }: { tableHeight: number }): Dashb
     executeShortcutAction,
     handleSectionHeaderClick,
     handleSessionRowClick,
-  }
-}
-
-function projectRowsBySection(rows: SessionRow[], now: Date): Record<LaneStatus, SessionRow[]> {
-  return {
-    working: rows.filter((row) => rowInLane(row, "working", now)),
-    "needs-input": rows.filter((row) => rowInLane(row, "needs-input", now)),
-    completed: rows.filter((row) => rowInLane(row, "completed", now)),
   }
 }
 

@@ -1,7 +1,8 @@
 import { TextAttributes } from "@opentui/core"
 import { useState } from "react"
 import { useDashboardControllerContext } from "../hooks/use-dashboard-controller.tsx"
-import { countLane, displayWorktreeName, tabElementId, truncate } from "../lib/utils.ts"
+import { countLane } from "../lib/session-hierarchy.ts"
+import { displayWorktreeName, tabElementId, truncate } from "../lib/utils.ts"
 import { useDashboardStore } from "../store/dashboard.ts"
 import { theme } from "../theme.ts"
 

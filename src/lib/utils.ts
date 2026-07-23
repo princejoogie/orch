@@ -250,17 +250,6 @@ export function tabElementId(tab: ProjectTab): string {
   return `tab-${tab.id}`
 }
 
-export function countLane(rows: SessionRow[], status: LaneStatus, now: Date | number): number {
-  return rows.filter((row) => rowInLane(row, status, now)).length
-}
-
-export function rowInLane(row: SessionRow, status: LaneStatus, now: Date | number): boolean {
-  if (status === "needs-input") return isNeedsInput(row, now)
-  if (isNeedsInput(row, now)) return false
-  if (status === "completed") return row.status === "completed" && !isNeedsInput(row, now)
-  return row.status === status
-}
-
 export function context(row: SessionRow): string {
   return formatDirectory(row.directory)
 }
