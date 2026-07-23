@@ -1,5 +1,11 @@
 # orch
 
+## 1.5.1
+
+### Patch Changes
+
+- Add project-local OpenCode references for the OpenCode SDK and Effect source repositories.
+
 ## 1.5.0
 
 ### Minor Changes
