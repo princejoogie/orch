@@ -5,6 +5,7 @@
 ### Patch Changes
 
 - Add project-local OpenCode references for the OpenCode SDK and Effect source repositories.
+- Update compatible runtime and toolchain dependencies, including React, React Query, Effect, Zustand, and Oxlint.
 
 ## 1.5.0
 

@@ -15,6 +15,7 @@ const DIALOG_MUTED = theme.textMuted
 const DIALOG_HINT = theme.textMuted
 const DIALOG_SEPARATOR = theme.border
 const DIALOG_COUNT = theme.primary
+const EMPTY_JUNCTIONS: readonly number[] = []
 
 const PROMPT_TEXTAREA_KEY_BINDINGS: KeyBinding[] = [
   { name: "return", action: "submit" },
@@ -139,8 +140,8 @@ export function ModalFrame({
   top,
   width,
   height,
-  junctionRows = [],
-  topJunctionColumns = [],
+  junctionRows = EMPTY_JUNCTIONS,
+  topJunctionColumns = EMPTY_JUNCTIONS,
   background = DIALOG_BACKGROUND,
   onClose,
 }: {

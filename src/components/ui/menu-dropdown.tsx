@@ -4,6 +4,8 @@ import { theme } from "../../theme.ts"
 import { mouseAction } from "./button.tsx"
 import { ModalFrame, TextLine, fitCell } from "./dialog.tsx"
 
+const NOOP = () => {}
+
 export type MenuItem = {
   label: string
   shortcut: string
@@ -79,7 +81,7 @@ export function MenuList({
   selectedBackground,
   selectOnHover = true,
   onSelect,
-  onClose = () => {},
+  onClose = NOOP,
 }: {
   items: readonly MenuItem[]
   selectedIndex: number

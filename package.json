@@ -33,17 +33,17 @@
     "@opencode-ai/sdk": "1.18.4",
     "@opentui/core": "0.2.15",
     "@opentui/react": "0.2.15",
-    "@tanstack/react-query": "^5.100.14",
-    "effect": "^3.21.3",
-    "react": "19.2.0",
-    "zustand": "^5.0.13"
+    "@tanstack/react-query": "^5.101.4",
+    "effect": "^3.22.0",
+    "react": "19.2.8",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@types/react": "^19.2.0",
+    "@types/react": "^19.2.17",
     "oxfmt": "0.41.0",
-    "oxlint": "1.60.0",
-    "typescript": "^5.8.2"
+    "oxlint": "1.75.0",
+    "typescript": "^5.9.3"
   },
   "engines": {
     "bun": ">=1.3.0"
