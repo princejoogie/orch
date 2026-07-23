@@ -1,0 +1,16 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": [],
+  "references": {
+    "opencode": {
+      "repository": "anomalyco/opencode",
+      "branch": "dev",
+      "description": "Use for opencode sdk reference"
+    },
+    "effect": {
+      "repository": "effect-ts/effect",
+      "branch": "main",
+      "description": "Use for effect-ts reference"
+    }
+  }
+}
